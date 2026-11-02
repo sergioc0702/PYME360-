@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="350" viewBox="0 0 560 350" role="img" aria-labelledby="title description">
+  <title id="title">Recibo demostrativo de energía</title>
+  <desc id="description">Ejemplo ficticio de un recibo con consumo de 1.284 kilovatios hora.</desc>
+  <rect width="560" height="350" rx="18" fill="#f7f8f4"/>
+  <rect x="24" y="24" width="512" height="302" rx="12" fill="#fff" stroke="#d5ded5" stroke-width="2"/>
+  <rect x="24" y="24" width="512" height="64" rx="12" fill="#244f3c"/>
+  <path d="M24 76h512v12H24z" fill="#244f3c"/>
+  <text x="48" y="55" fill="#d7eabb" font-family="Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="2">DOCUMENTO DE EJEMPLO</text>
+  <text x="48" y="75" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="700">RECIBO DE ENERGÍA</text>
+  <text x="50" y="121" fill="#52645a" font-family="Arial,sans-serif" font-size="13">Cliente demostrativo · NIT 000.000.000</text>
+  <text x="50" y="155" fill="#68766d" font-family="Arial,sans-serif" font-size="12">Período de consumo</text>
+  <text x="50" y="178" fill="#1e3028" font-family="Arial,sans-serif" font-size="17" font-weight="700">Octubre de 2026</text>
+  <line x1="50" y1="198" x2="510" y2="198" stroke="#e5ebe4" stroke-width="2"/>
+  <text x="50" y="231" fill="#68766d" font-family="Arial,sans-serif" font-size="13">Consumo facturado</text>
+  <text x="50" y="282" fill="#244f3c" font-family="Arial,sans-serif" font-size="40" font-weight="700">1.284 kWh</text>
+  <rect x="385" y="224" width="125" height="38" rx="19" fill="#e7f0e5"/>
+  <text x="410" y="248" fill="#315541" font-family="Arial,sans-serif" font-size="12" font-weight="700">FICTICIO</text>
+  <text x="50" y="307" fill="#8a978d" font-family="Arial,sans-serif" font-size="10">No corresponde a una factura real ni a una empresa existente.</text>
+</svg>

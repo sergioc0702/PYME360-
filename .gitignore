@@ -1,0 +1,30 @@
+# Archivos de trabajo y artefactos generados, fuera de la demostración web.
+outputs/
+.build/
+*.exe
+
+# Dependencias o datos locales que no deben versionarse.
+node_modules/
+/typescript-model/dist/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.sqlite3-*
+*.sqlite
+*.sqlite-*
+*.db
+backups/
+pyme360-data/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

@@ -1,0 +1,56 @@
+name: Windows desktop executable
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-desktop:
+    runs-on: windows-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependencias de React
+        working-directory: typescript-model
+        run: npm ci
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Crear el ejecutable portable
+        shell: pwsh
+        run: ./desktop/build-executable.ps1
+
+      - name: Guardar el ejecutable como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pyme360-Windows
+          path: outputs/releases/Pyme360.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publicar el ejecutable de la versión
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $tagVersion = $env:GITHUB_REF_NAME.Substring(1)
+          if ($version -ne $tagVersion) {
+            throw "El tag $env:GITHUB_REF_NAME debe coincidir con VERSION ($version)."
+          }
+          gh release create $env:GITHUB_REF_NAME outputs/releases/Pyme360.exe --title "Pyme360 $env:GITHUB_REF_NAME" --generate-notes
