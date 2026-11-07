@@ -75,13 +75,13 @@ class CloudApiPostgresIntegrationTests(unittest.TestCase):
         return data, {"Authorization": f"Bearer {data['accessToken']}"}
 
     @staticmethod
-    def product_batch(batch_id: str, stock: int = 4, base_version: int = 0) -> dict:
+    def product_batch(batch_id: str, stock: int = 4, base_version: int = 0, movement_id: str = "opening-1") -> dict:
         product = {
             "id": "product-1", "name": "Producto", "type": "finished", "stock": stock,
             "minimumStock": 1, "unitCost": 10, "unitPrice": 100, "vatRate": 19, "recipe": [],
         }
         movement = {
-            "id": "opening-1", "productId": "product-1", "quantity": stock,
+            "id": movement_id, "productId": "product-1", "quantity": stock,
             "balanceAfter": stock, "movementType": "opening_balance", "reason": "Inicial",
         }
         return {
@@ -89,7 +89,7 @@ class CloudApiPostgresIntegrationTests(unittest.TestCase):
             "deviceId": "integration-device",
             "changes": [
                 {"entityType": "products", "entityId": "product-1", "baseVersion": base_version, "action": "upsert", "payload": product},
-                {"entityType": "inventoryMovements", "entityId": "opening-1", "baseVersion": 0, "action": "upsert", "payload": movement},
+                {"entityType": "inventoryMovements", "entityId": movement_id, "baseVersion": 0, "action": "upsert", "payload": movement},
             ],
         }
 
@@ -118,9 +118,15 @@ class CloudApiPostgresIntegrationTests(unittest.TestCase):
         first = self.client.post("/api/v1/sync/push", headers=admin_headers, json=self.product_batch("batch-first"))
         self.assertEqual(200, first.status_code, first.text)
 
-        conflict = self.client.post("/api/v1/sync/push", headers=admin_headers, json=self.product_batch("batch-stale", stock=3))
+        # Otro equipo cambia el producto con un movimiento nuevo: los movimientos nunca se reescriben.
+        stale = self.product_batch("batch-stale", stock=3, movement_id="adjustment-1")
+        conflict = self.client.post("/api/v1/sync/push", headers=admin_headers, json=stale)
         self.assertEqual(409, conflict.status_code, conflict.text)
         self.assertTrue(conflict.json()["conflicts"])
+
+        rewrite = self.client.post("/api/v1/sync/push", headers=admin_headers, json=self.product_batch("batch-rewrite", stock=3, base_version=1))
+        self.assertEqual(400, rewrite.status_code, rewrite.text)
+        self.assertIn("inmutable", rewrite.text)
 
         invitation = self.client.post("/api/v1/members/invitations", headers=admin_headers, json={
             "email": "viewer@example.test", "role": "viewer",
