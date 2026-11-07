@@ -23,6 +23,7 @@ export type ColumnConcept =
   | "productType"
   | "unit"
   | "stock"
+  | "minimumStock"
   | "cost"
   | "price"
   | "vat"
@@ -74,7 +75,10 @@ export const COLUMN_CONCEPTS: Record<ColumnConcept, ConceptDefinition> = {
     keywords: ["sku", "codigo", "cod", "referencia", "ref"],
     priority: 0.15,
   },
-  productType: { label: "Tipo de producto", keywords: ["tipo producto", "clase", "categoria"] },
+  productType: {
+    label: "Tipo de producto",
+    keywords: ["tipo producto", "tipo", "clase", "categoria"],
+  },
   unit: {
     label: "Unidad de medida",
     keywords: ["unidad de medida", "unidad", "medida", "um", "presentacion"],
@@ -83,6 +87,12 @@ export const COLUMN_CONCEPTS: Record<ColumnConcept, ConceptDefinition> = {
     label: "Existencia",
     keywords: ["existencia", "existencias", "stock", "disponible", "inventario"],
     content: "number",
+  },
+  minimumStock: {
+    label: "Mínimo",
+    keywords: ["stock minimo", "minimo", "existencia minima", "punto de reposicion"],
+    content: "number",
+    priority: 0.3,
   },
   cost: { label: "Costo", keywords: ["costo", "coste"], content: "number", priority: 0.05 },
   price: {
@@ -316,6 +326,19 @@ export function analyzeSheet(sheet: ExcelSheetData): SheetAnalysis {
       column.evidence = "";
     } else owner.set(column.concept, column);
   }
+  // "Nombre" con precios, costos o existencias es un producto, no una persona.
+  const nameColumn = owner.get("contactName");
+  const hasProductData = ["cost", "price", "stock", "minimumStock"].some((item) =>
+    owner.has(item as ColumnConcept),
+  );
+  const hasContactData = ["customer", "supplier", "taxId", "email", "phone"].some((item) =>
+    owner.has(item as ColumnConcept),
+  );
+  if (nameColumn && hasProductData && !hasContactData && !owner.has("product")) {
+    nameColumn.concept = "product";
+    owner.delete("contactName");
+    owner.set("product", nameColumn);
+  }
   const hint = sheetHint(sheet.name);
   const concepts = new Set(owner.keys());
   const kind = isComputedImportSheet(sheet.name) ? null : decideKind(concepts, hint);
@@ -542,6 +565,7 @@ export function buildSmartRows(
             type: productTypeLabel(text(values, "productType"), "producto terminado"),
             unit: text(values, "unit") || "unidad",
             stock: values.get("stock") ?? null,
+            minimumStock: values.get("minimumStock") ?? null,
             unitCost: values.get("cost") ?? null,
             unitPrice: values.get("price") ?? null,
             vatRate: values.get("vat") ?? null,

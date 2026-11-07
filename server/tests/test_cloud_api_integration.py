@@ -20,7 +20,7 @@ if TEST_DATABASE_URL:
 
         os.environ["DATABASE_URL"] = TEST_DATABASE_URL
         os.environ["APP_ENV"] = "development"
-        os.environ["PUBLIC_BASE_URL"] = "http://testserver"
+        os.environ["PUBLIC_BASE_URL"] = "http://localhost"
         os.environ["SMTP_HOST"] = ""
         from app import app
 

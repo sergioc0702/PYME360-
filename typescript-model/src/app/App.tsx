@@ -71,6 +71,7 @@ import {
   formatMoney,
   getInitialTheme,
   LoginScreen,
+  PasswordModal,
   UsersModal,
   NavIcon,
 } from "./AppViews";
@@ -377,7 +378,7 @@ function Workspace({
 
   function removeReading(readingId: string) {
     if (window.confirm("¿Eliminar esta lectura ambiental?"))
-      run(() => deleteResourceReading(state, readingId), "Lectura ambiental eliminada.");
+      run(() => deleteResourceReading(state, readingId), "Consumo eliminado.");
   }
 
   function importReceipt(file: File) {
@@ -479,10 +480,7 @@ function Workspace({
       externalReference: extraction.invoiceNumber || undefined,
       capturedAt: now,
     });
-    commit(
-      environmental,
-      "Recibo confirmado; la lectura se agregó sin reemplazar otros recursos del mes.",
-    );
+    commit(environmental, "Recibo guardado en tu consumo.");
   }
 
   function confirmDeleteSale(sale: Sale) {
@@ -1195,6 +1193,16 @@ function Workspace({
               </button>
               <button
                 type="button"
+                className="workspace-profile-action"
+                onClick={() => {
+                  setProfileOpen(false);
+                  setModal({ type: "password" });
+                }}
+              >
+                Cambiar mi contraseña
+              </button>
+              <button
+                type="button"
                 className="workspace-profile-action is-danger"
                 onClick={onLogout}
               >
@@ -1466,7 +1474,7 @@ function Workspace({
           onSave={(input) =>
             run(
               () => saveResourceReading(state, input, modal.reading?.id),
-              modal.reading ? "Lectura ambiental actualizada." : "Lectura ambiental guardada.",
+              modal.reading ? "Consumo actualizado." : "Consumo guardado.",
             )
           }
         />
@@ -1599,7 +1607,7 @@ function Workspace({
             }
             run(
               () => reconcileInventoryCount(state, modal.product.id, countedQuantity, reason),
-              "Conteo conciliado; se registró la diferencia en el libro de inventario.",
+              "Conteo guardado. La diferencia quedó en el historial de Inventario.",
             );
           }}
         />
@@ -1614,6 +1622,15 @@ function Workspace({
               "Orden completada; producto terminado agregado al inventario.",
             )
           }
+        />
+      )}
+      {modal?.type === "password" && (
+        <PasswordModal
+          onClose={() => setModal(null)}
+          onDone={() => {
+            setModal(null);
+            notify("Contraseña cambiada.");
+          }}
         />
       )}
       {modal?.type === "users" && isAdmin && (

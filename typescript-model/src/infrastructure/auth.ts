@@ -116,6 +116,25 @@ export async function updateUserRole(userId: string, role: UserRole): Promise<Au
   return result.user;
 }
 
+export async function changeOwnPassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await request<{ ok: boolean }>(`${AUTH_API}/password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+export async function resetUserPassword(userId: string, password: string): Promise<void> {
+  await request<{ ok: boolean }>(`${AUTH_API}/users/${encodeURIComponent(userId)}/password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+}
+
 export async function deleteUser(userId: string): Promise<void> {
   await request<{ ok: boolean }>(`${AUTH_API}/users/${encodeURIComponent(userId)}`, {
     method: "DELETE",

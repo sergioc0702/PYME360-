@@ -2,7 +2,7 @@
 
 Esta guía corresponde a la interfaz actual de Pyme360 (React/TypeScript). Está escrita para empezar desde cero, sin conocimientos contables ni técnicos.
 
-> **Antes de empezar:** abre `Pyme360.exe` o, si trabajas desde el código fuente, el lanzador de tu computador y deja abierta su ventana. Los datos del negocio se guardan en SQLite en este computador. Pyme360 no reemplaza el sistema contable y, sin un proveedor tecnológico configurado, no transmite facturas.
+> **Antes de empezar:** abre `Abrir Pyme360.bat` y deja abierta su ventana. Los datos del negocio se guardan en SQLite en este computador. Pyme360 no reemplaza el sistema contable y, sin un proveedor tecnológico configurado, no transmite facturas.
 
 ## 1. Recorrido recomendado para empezar
 
@@ -266,3 +266,19 @@ Si ya existe, abre tu perfil y elige **Sincronización**. Desde allí puedes **C
 ## Límites de esta versión
 
 Esta versión no incluye varias empresas en una misma instalación, conexión con bancos, nómina, contabilidad formal de partida doble ni envío de reportes ambientales a autoridades. Tampoco se conecta en tiempo real a medidores ni a cuentas de servicios públicos. Las tarifas tributarias, los requisitos de facturación y las obligaciones ambientales deben revisarse con el contador y el asesor ambiental de la empresa.
+
+## Si olvidas una contraseña
+
+Cada persona cambia la suya en su perfil, con **Cambiar mi contraseña**. Un administrador también puede cambiar la de otro usuario en **Usuarios**.
+
+Si el único administrador la olvidó, cierra Pyme360 y ejecuta este comando desde la carpeta del programa, en el mismo computador y la misma cuenta de Windows:
+
+```bash
+python server/serve-local.py --reset-password USUARIO
+```
+
+## Protección de los archivos
+
+Los respaldos que descargas quedan protegidos con la contraseña que elijas. Si la olvidas, ese respaldo no se puede abrir.
+
+La base de datos y las copias diarias que quedan en el computador no están cifradas. Usa una cuenta de Windows propia con contraseña y activa el cifrado del dispositivo.

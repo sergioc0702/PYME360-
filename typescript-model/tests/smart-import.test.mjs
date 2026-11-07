@@ -259,3 +259,28 @@ test("lee CSV con punto y coma, comillas y tildes en Windows-1252", () => {
   const latin = new Uint8Array([0x50, 0xe9, 0x72, 0x65, 0x7a]).buffer;
   assert.equal(app.decodeText(latin), "Pérez");
 });
+
+test("una hoja con nombre, costo y mínimo es de productos, no de personas", () => {
+  const analysis = app.analyzeSheet({
+    name: "catalogo",
+    rows: [
+      ["Nombre", "Tipo", "Unidad", "Costo", "Precio", "Stock mínimo"],
+      ["Sal", "Materia prima", "kg", 1500, 0, 5],
+      ["Cuajo", "Insumo", "L", 30000, 0, 1],
+    ],
+  });
+  assert.equal(analysis.kind, "products");
+  const concepts = analysis.columns.map((column) => column.concept);
+  assert.deepEqual(concepts, ["product", "productType", "unit", "cost", "price", "minimumStock"]);
+});
+
+test("una lista de personas con teléfono sigue siendo de contactos", () => {
+  const analysis = app.analyzeSheet({
+    name: "Hoja1",
+    rows: [
+      ["Nombre", "Teléfono", "Correo"],
+      ["Ana", "3100000000", "ana@ejemplo.test"],
+    ],
+  });
+  assert.equal(analysis.kind, "contacts");
+});

@@ -5,14 +5,17 @@ from __future__ import annotations
 
 import json
 import argparse
+import getpass
 import hashlib
 import hmac
 import math
 import os
 import re
 import secrets
+import shutil
 import socket
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -28,6 +31,7 @@ from pathlib import Path
 
 from environment_benchmarks import get_benchmark_response
 from electronic_invoicing import (
+    _PROVIDER_OPENER as NO_REDIRECT_OPENER,
     InvoiceXmlError,
     ProviderNotConfiguredError,
     ProviderRequestError,
@@ -69,10 +73,10 @@ TYPESCRIPT_MODEL_SCHEMA_VERSION = 7
 PASSWORD_ITERATIONS = 600_000
 SESSION_TTL_SECONDS = 12 * 60 * 60
 PORTS = range(8765, 8791)
-PROJECT_ROOT = Path(
-    getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)
-).resolve()
-TYPESCRIPT_MODEL_ROOT = PROJECT_ROOT / "typescript-model" / "dist"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+FRONTEND_ROOT = PROJECT_ROOT / "typescript-model"
+TYPESCRIPT_MODEL_ROOT = FRONTEND_ROOT / "dist"
+FRONTEND_SOURCES = ("src", "public", "index.html", "package-lock.json", "vite.config.ts")
 benchmark_cache: dict | None = None
 benchmark_cached_at = 0.0
 benchmark_lock = threading.Lock()
@@ -493,6 +497,28 @@ def password_record(password: str) -> tuple[str, str, str, int]:
     return salt.hex(), digest.hex(), "pbkdf2_sha256", PASSWORD_ITERATIONS
 
 
+def password_matches(row: sqlite3.Row, password: str) -> bool:
+    if row["password_algorithm"] == "legacy_sha256":
+        candidate = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    else:
+        candidate = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), bytes.fromhex(row["password_salt"]), int(row["password_iterations"])
+        ).hex()
+    return hmac.compare_digest(candidate, row["password_hash"])
+
+
+def valid_new_password(password: object) -> bool:
+    return isinstance(password, str) and 8 <= len(password) <= 256
+
+
+def store_password(connection: sqlite3.Connection, user_id: str, password: str) -> None:
+    salt, digest, algorithm, iterations = password_record(password)
+    connection.execute(
+        "UPDATE users SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=? WHERE id=?",
+        (salt, digest, algorithm, iterations, user_id),
+    )
+
+
 def public_user(row: sqlite3.Row | dict) -> dict:
     return {
         "id": row["id"],
@@ -689,6 +715,139 @@ def business_value_error(previous: dict, updated: dict) -> str | None:
     return None
 
 
+SALE_LOCKED_FIELDS = (
+    "number", "date", "customerId", "customerName", "lines", "subtotal", "discount", "vatAmount", "total",
+)
+MONEY_TOLERANCE = 1
+
+
+def number_or_zero(value: object) -> float:
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
+
+
+def rows_by_id(state: dict, section: str) -> dict[str, dict]:
+    rows = state.get(section, [])
+    if not isinstance(rows, list):
+        return {}
+    return {str(row.get("id")): row for row in rows if isinstance(row, dict)}
+
+
+def payments_of(row: dict) -> list[dict]:
+    payments = row.get("payments")
+    return [payment for payment in payments if isinstance(payment, dict)] if isinstance(payments, list) else []
+
+
+def sale_adjustments(state: dict, sale_id: str) -> float:
+    """Las notas aceptadas cambian lo que se puede cobrar, igual que en outstandingBalance."""
+    total = 0.0
+    for document in rows_by_id(state, "electronicDocuments").values():
+        if (
+            str(document.get("saleId")) != sale_id
+            or document.get("status") not in {"accepted", "delivered"}
+            or document.get("kind") == "invoice"
+        ):
+            continue
+        snapshot = document.get("snapshot") if isinstance(document.get("snapshot"), dict) else {}
+        amount = document.get("adjustmentAmount")
+        amount = number_or_zero(snapshot.get("total") if amount is None else amount)
+        total += -amount if document.get("kind") == "credit_note" else amount
+    return total
+
+
+def new_payments_error(
+    before: dict | None,
+    row: dict,
+    direction: str,
+    limit: float | None,
+    updated: dict,
+    used_movements: set[str],
+    role: str,
+) -> str | None:
+    number = row.get("number") or row.get("id")
+    payments = payments_of(row)
+    current_by_id = {str(payment.get("id")): payment for payment in payments}
+    previous_payments = payments_of(before) if before else []
+    for payment in previous_payments:
+        if current_by_id.get(str(payment.get("id"))) != payment:
+            return f"Los pagos ya registrados de {number} no se cambian ni se eliminan."
+    known = {str(payment.get("id")) for payment in previous_payments}
+    new_payments = [payment for payment in payments if str(payment.get("id")) not in known]
+    if not new_payments:
+        return None
+    if limit is not None and sum(number_or_zero(p.get("amount")) for p in payments) > limit + 0.01:
+        return f"Los pagos de {number} superan su saldo."
+    movements = rows_by_id(updated, "cashMovements")
+    for payment in new_payments:
+        amount = payment.get("amount")
+        if invalid_amount(amount) or number_or_zero(amount) <= 0:
+            return f"Un pago de {number} no tiene un valor válido."
+        movement_id = str(payment.get("cashMovementId") or "")
+        if not movement_id:
+            # El historial importado por un administrador puede no tener caja asociada.
+            if role == "admin":
+                continue
+            return f"Cada pago de {number} debe tener su entrada o salida de dinero."
+        movement = movements.get(movement_id)
+        if (
+            movement is None
+            or movement.get("direction") != direction
+            or abs(number_or_zero(movement.get("amount")) - number_or_zero(amount)) > 0.01
+            or movement_id in used_movements
+        ):
+            return f"El pago de {number} no coincide con su entrada o salida de dinero."
+        used_movements.add(movement_id)
+    return None
+
+
+def payment_integrity_error(previous: dict, updated: dict, role: str) -> str | None:
+    """Las ventas no se editan después de creadas y cada pago debe poder explicarse."""
+    if int(previous.get("schemaVersion", 0) or 0) < TYPESCRIPT_MODEL_SCHEMA_VERSION:
+        return None
+    used_movements = {
+        str(payment.get("cashMovementId"))
+        for section in ("sales", "purchases")
+        for row in rows_by_id(previous, section).values()
+        for payment in payments_of(row)
+        if payment.get("cashMovementId")
+    }
+    previous_sales = rows_by_id(previous, "sales")
+    for sale_id, sale in rows_by_id(updated, "sales").items():
+        before = previous_sales.get(sale_id)
+        if before == sale:
+            continue
+        number = sale.get("number") or sale_id
+        if before is not None:
+            if any(before.get(field) != sale.get(field) for field in SALE_LOCKED_FIELDS):
+                return f"La venta {number} no se puede modificar después de registrada."
+        else:
+            lines = sale.get("lines") if isinstance(sale.get("lines"), list) else []
+            totals = [line.get("total") for line in lines if isinstance(line, dict)]
+            if (
+                lines
+                and len(totals) == len(lines)
+                and all(isinstance(value, (int, float)) for value in totals)
+                and abs(sum(totals) - number_or_zero(sale.get("total"))) > MONEY_TOLERANCE
+            ):
+                return f"El total de la venta {number} no coincide con sus productos."
+        limit = number_or_zero(sale.get("total")) + sale_adjustments(updated, sale_id)
+        error = new_payments_error(before, sale, "in", limit, updated, used_movements, role)
+        if error:
+            return error
+    previous_purchases = rows_by_id(previous, "purchases")
+    for purchase_id, purchase in rows_by_id(updated, "purchases").items():
+        before = previous_purchases.get(purchase_id)
+        if before == purchase:
+            continue
+        limit = None
+        if purchase.get("payableReviewStatus") != "review_required":
+            amount = purchase.get("payableAmount")
+            limit = number_or_zero(purchase.get("total") if amount is None else amount)
+        error = new_payments_error(before, purchase, "out", limit, updated, used_movements, role)
+        if error:
+            return error
+    return None
+
+
 def login_lock_remaining(username: str) -> int:
     with login_failures_lock:
         _, locked_until = login_failures.get(username.casefold(), (0, 0.0))
@@ -870,7 +1029,8 @@ def cloud_json_request(
         headers["Authorization"] = f"Bearer {access_token}"
     request = urllib.request.Request(api_url + path, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=25) as response:
+        # Un token de la nube nunca debe seguir una redirección hacia otro servidor.
+        with NO_REDIRECT_OPENER.open(request, timeout=25) as response:
             result = json.loads(response.read().decode("utf-8"))
             result = result if isinstance(result, dict) else {}
             if isinstance(result.get("detail"), dict):
@@ -1058,6 +1218,14 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
             return self._read_body(length).decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise ValueError("El XML debe estar codificado en UTF-8.") from exc
+
+    def _session_token_hash(self) -> str:
+        try:
+            cookie = SimpleCookie(self.headers.get("Cookie", ""))
+            token = cookie.get("pyme360_session").value if cookie.get("pyme360_session") else ""
+        except (KeyError, AttributeError):
+            token = ""
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
     def _session_user(self) -> dict | None:
         try:
@@ -1526,16 +1694,10 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                     record_login_failure(username)
                     self._json(401, {"error": "Usuario o contraseña incorrectos."})
                     return True
-                if row["password_algorithm"] == "legacy_sha256":
-                    candidate = hashlib.sha256(password.encode("utf-8")).hexdigest()
-                    valid_password = hmac.compare_digest(candidate, row["password_hash"])
-                    if valid_password:
-                        salt, digest, algorithm, iterations = password_record(password)
-                        connection.execute("UPDATE users SET password_salt=?, password_hash=?, password_algorithm=?, password_iterations=? WHERE id=?", (salt, digest, algorithm, iterations, row["id"]))
-                        row = connection.execute("SELECT * FROM users WHERE id=?", (row["id"],)).fetchone()
-                else:
-                    candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(row["password_salt"]), int(row["password_iterations"])).hex()
-                    valid_password = hmac.compare_digest(candidate, row["password_hash"])
+                valid_password = password_matches(row, password)
+                if valid_password and row["password_algorithm"] == "legacy_sha256":
+                    store_password(connection, row["id"], password)
+                    row = connection.execute("SELECT * FROM users WHERE id=?", (row["id"],)).fetchone()
             if not valid_password:
                 record_login_failure(username)
                 self._json(401, {"error": "Usuario o contraseña incorrectos."})
@@ -1570,6 +1732,70 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                 with db_session() as connection:
                     write_audit(connection, current_user, "logout", "session", current_user["id"])
             self._json(200, {"ok": True}, {"Set-Cookie": self._clear_session()})
+            return True
+
+        if path == "/api/v1/auth/password" and method == "POST":
+            if not current_user:
+                self._json(401, {"error": "Inicia sesión para cambiar tu contraseña."})
+                return True
+            try:
+                payload = self._read_auth_json()
+            except (OverflowError, ValueError) as exc:
+                self._json(400, {"error": str(exc)})
+                return True
+            username = current_user["username"]
+            wait_seconds = login_lock_remaining(username)
+            if wait_seconds:
+                self._json(429, {"error": f"Demasiados intentos fallidos. Espera {wait_seconds} segundos e inténtalo de nuevo."})
+                return True
+            new_password = payload.get("newPassword")
+            if not valid_new_password(new_password):
+                self._json(400, {"error": "La contraseña nueva debe tener entre 8 y 256 caracteres."})
+                return True
+            with db_session() as connection:
+                row = connection.execute("SELECT * FROM users WHERE id=?", (current_user["id"],)).fetchone()
+                if not password_matches(row, str(payload.get("currentPassword", ""))):
+                    record_login_failure(username)
+                    self._json(403, {"error": "La contraseña actual no es correcta."})
+                    return True
+                store_password(connection, row["id"], new_password)
+                # Quien tuviera la contraseña anterior pierde sus otras sesiones abiertas.
+                connection.execute(
+                    "DELETE FROM sessions WHERE user_id=? AND token_hash<>?",
+                    (row["id"], self._session_token_hash()),
+                )
+                write_audit(connection, current_user, "updated", "user", row["id"], {"fields": ["password"]})
+            clear_login_failures(username)
+            self._json(200, {"ok": True})
+            return True
+
+        password_reset_match = re.fullmatch(r"/api/v1/auth/users/([^/]+)/password", path)
+        if password_reset_match and method == "POST":
+            if not current_user or current_user["role"] != "admin":
+                self._json(403, {"error": "Solo un administrador puede cambiar la contraseña de otra persona."})
+                return True
+            try:
+                payload = self._read_auth_json()
+            except (OverflowError, ValueError) as exc:
+                self._json(400, {"error": str(exc)})
+                return True
+            new_password = payload.get("password")
+            if not valid_new_password(new_password):
+                self._json(400, {"error": "La contraseña nueva debe tener entre 8 y 256 caracteres."})
+                return True
+            user_id = urllib.parse.unquote(password_reset_match.group(1))
+            if user_id == current_user["id"]:
+                self._json(400, {"error": "Cambia tu propia contraseña desde tu perfil."})
+                return True
+            with db_session() as connection:
+                target = connection.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone()
+                if target is None:
+                    self._json(404, {"error": "No encontramos el usuario."})
+                    return True
+                store_password(connection, user_id, new_password)
+                connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+                write_audit(connection, current_user, "updated", "user", user_id, {"fields": ["password"]})
+            self._json(200, {"ok": True})
             return True
 
         if path == "/api/v1/auth/users" and method == "POST":
@@ -1896,6 +2122,10 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                     if ledger_error:
                         connection.rollback()
                         return self._json(400, {"error": ledger_error})
+                    integrity_error = payment_integrity_error(previous_state, updated_state, actor["role"])
+                    if integrity_error:
+                        connection.rollback()
+                        return self._json(400, {"error": integrity_error})
                     value_error = business_value_error(previous_state, updated_state)
                     if value_error:
                         connection.rollback()
@@ -2146,6 +2376,16 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
             if not workspace_id or not email or not password:
                 self._json(400, {"error": "Indica el identificador del espacio, correo y contraseña."})
                 return True
+            if actor["role"] != "admin":
+                # Elegir el servidor decide a dónde viajan los datos y los tokens de todos.
+                with db_session() as connection:
+                    linked = connection.execute("SELECT api_url FROM sync_configuration WHERE id=1").fetchone()
+                if not linked:
+                    self._json(403, {"error": "Un administrador debe vincular primero este equipo a la nube."})
+                    return True
+                if linked["api_url"] != api_url:
+                    self._json(403, {"error": "Usa la dirección de la nube que configuró el administrador."})
+                    return True
             try:
                 status, response = cloud_json_request(
                     api_url,
@@ -2874,9 +3114,76 @@ class LoopbackHTTPServer(ThreadingHTTPServer):
     address_family = socket.AF_INET
 
 
+def frontend_is_outdated(frontend_root: Path = FRONTEND_ROOT) -> bool:
+    """La interfaz compilada no se sube a GitHub: falta en una copia nueva y envejece con cada cambio."""
+    built = frontend_root / "dist" / "index.html"
+    if not built.exists():
+        return True
+    built_at = built.stat().st_mtime
+    for name in FRONTEND_SOURCES:
+        source = frontend_root / name
+        files = source.rglob("*") if source.is_dir() else [source]
+        if any(item.is_file() and item.stat().st_mtime > built_at for item in files):
+            return True
+    return False
+
+
+def prepare_frontend() -> bool:
+    """Compila la interfaz si hace falta. Sin Node.js solo sigue si ya hay una compilación."""
+    if not frontend_is_outdated():
+        return True
+    available = (TYPESCRIPT_MODEL_ROOT / "index.html").exists()
+    npm = shutil.which("npm")
+    if npm is None:
+        if available:
+            print("Aviso: hay cambios sin compilar y no se encontró Node.js. Se abrirá la última versión compilada.")
+            return True
+        print("La primera vez Pyme360 necesita Node.js 22 o superior para preparar la pantalla.")
+        print("Instálalo desde https://nodejs.org/ y vuelve a abrir el lanzador.")
+        return False
+    steps = [] if (FRONTEND_ROOT / "node_modules").exists() else [("Instalando componentes, solo la primera vez…", "ci")]
+    steps.append(("Preparando la pantalla de Pyme360, espera un momento…", "build"))
+    for message, command in steps:
+        print(message)
+        arguments = [npm, "ci"] if command == "ci" else [npm, "run", "build"]
+        if subprocess.run(arguments, cwd=FRONTEND_ROOT).returncode != 0:
+            if available:
+                print("Aviso: no se pudo compilar. Se abrirá la última versión compilada.")
+                return True
+            print("No se pudo preparar la pantalla de Pyme360. Revisa el mensaje anterior.")
+            return False
+    return True
+
+
+def reset_local_password(username: str) -> int:
+    """Recuperación para quien olvidó la clave; exige acceso a este computador."""
+    with db_session() as connection:
+        row = connection.execute("SELECT id, username FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone()
+    if row is None:
+        print("No existe ese usuario.")
+        return 1
+    password = getpass.getpass("Contraseña nueva: ")
+    if not valid_new_password(password):
+        print("La contraseña debe tener entre 8 y 256 caracteres.")
+        return 1
+    if password != getpass.getpass("Repite la contraseña: "):
+        print("Las contraseñas no coinciden.")
+        return 1
+    with db_session() as connection:
+        store_password(connection, row["id"], password)
+        connection.execute("DELETE FROM sessions WHERE user_id=?", (row["id"],))
+        write_audit(
+            connection, {"id": row["id"], "username": row["username"]},
+            "updated", "user", row["id"], {"fields": ["password"], "source": "recuperación local"},
+        )
+    print(f"Contraseña actualizada para {row['username']}.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Servidor local de Pyme360")
     parser.add_argument("--no-browser", action="store_true", help="No abrir el navegador al iniciar")
+    parser.add_argument("--reset-password", metavar="USUARIO", help="Cambiar la contraseña de un usuario local y salir")
     arguments = parser.parse_args()
     load_env_file(Path(__file__).with_name(".env"))
     if sys.version_info < MIN_PYTHON:
@@ -2888,6 +3195,10 @@ def main() -> int:
     except (OSError, sqlite3.Error) as exc:
         print(f"No se pudo preparar la base local de Pyme360: {exc}")
         print(f"Revisa que tengas espacio y permisos en {DATA_DIR}.")
+        return 1
+    if arguments.reset_password:
+        return reset_local_password(arguments.reset_password)
+    if not prepare_frontend():
         return 1
     try:
         create_daily_backup()

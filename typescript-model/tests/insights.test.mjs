@@ -185,3 +185,13 @@ test("el informe incluye consumo, ahorro, productos y plan", () => {
   assert.match(text, /Torta/);
   assert.match(report.note, /no es un certificado oficial/i);
 });
+
+test("el último mes de consumo ignora meses que solo tienen ventas o producción", () => {
+  const metrics = [
+    { period: "2026-09", electricityKwh: 125, waterWithdrawalM3: null },
+    { period: "2026-10", electricityKwh: null, waterWithdrawalM3: 13 },
+    { period: "2026-11", electricityKwh: null, waterWithdrawalM3: null },
+  ];
+  assert.equal(app.latestConsumptionPeriod(metrics), "2026-10");
+  assert.equal(app.latestConsumptionPeriod([metrics[2]]), null);
+});

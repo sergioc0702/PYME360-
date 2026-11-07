@@ -31,7 +31,7 @@ jobs:
       - name: Install cloud API test requirements
         run: python -m pip install -r server/cloud/requirements-test.txt
       - name: Compile Python server
-        run: python -m py_compile desktop/launcher.py server/serve-local.py server/sync_local.py server/cloud/app.py server/cloud/validation.py
+        run: python -m py_compile server/serve-local.py server/sync_local.py server/cloud/app.py server/cloud/validation.py
       - name: Run local and PostgreSQL integration tests
         run: python -m unittest discover -s server/tests -v
 

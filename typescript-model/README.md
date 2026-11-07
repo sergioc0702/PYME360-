@@ -1,37 +1,16 @@
 # Pyme360 · Modelo React y TypeScript
 
-Interfaz React/TypeScript local para Pyme360. En Windows puede ejecutarse desde el navegador durante el desarrollo o como aplicación de escritorio portable. La base SQLite queda fuera de la carpeta del programa, en los datos del usuario; el servidor local solo acepta conexiones del computador.
+Interfaz React/TypeScript local para Pyme360. Se abre en el navegador y la base SQLite queda fuera de la carpeta del programa.
 
-## Uso de escritorio en Windows
-
-Descarga `Pyme360.exe` desde GitHub **Releases** y ejecútalo. Es portable, no requiere instalación, Node.js ni una terminal para el uso diario, y abre en una ventana propia. Windows debe tener Microsoft Edge WebView2 Runtime. La primera ejecución solicita crear el administrador.
-
-La base SQLite se crea en `%LOCALAPPDATA%\Pyme360\pyme360.sqlite3`, separada del ejecutable. Puedes mover o reemplazar `Pyme360.exe` sin mover los datos; no copies una base de datos dentro de la distribución. Los respaldos JSON se descargan desde **Datos y respaldo**.
-
-Para construir el ejecutable desde Windows, instala Python 3.11+, Node.js 22+ y WebView2 Runtime. Desde la raíz del repositorio ejecuta:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\desktop\build-executable.ps1
-```
-
-El resultado es `outputs/releases/Pyme360.exe`. PyInstaller y pywebview se instalan en un entorno aislado bajo `.build/desktop/`; el ejecutable contiene la interfaz, el servidor y los recursos estáticos, pero no la base SQLite ni secretos. La guía general está en el [README raíz](../README.md).
-
-## Desarrollo en navegador
+## Abrir en Windows
 
 - Python 3.11 o superior para ejecutar el servidor local y SQLite.
-- Node.js 22 o superior y npm para instalar dependencias y compilar la interfaz.
+- Node.js 22 o superior y npm para compilar la interfaz. Con la interfaz ya compilada, Node.js deja de ser obligatorio.
 - Un navegador moderno.
 
-## Preparar y ejecutar en Windows
+Haz doble clic en `Abrir Pyme360.bat`, en la raíz del repositorio. El servidor instala las dependencias si faltan, compila la interfaz si falta o si cambió el código, y abre el navegador. La ventana del lanzador debe quedar abierta.
 
-Desde esta carpeta, instala las dependencias una vez:
-
-```sh
-npm install
-```
-
-Después, haz doble clic en `Iniciar Pyme360.vbs`. El lanzador compila la interfaz y abre el modelo en el navegador sin mostrar una terminal. Requiere Node.js en `C:\Program Files\nodejs` y `py` o `python` disponible en Windows.
+La base SQLite se crea en `%LOCALAPPDATA%\Pyme360\pyme360.sqlite3`, fuera del repositorio.
 
 Para compilar manualmente:
 
@@ -39,7 +18,7 @@ Para compilar manualmente:
 npm run build
 ```
 
-La interfaz compilada queda en `dist/`; el servidor local la entrega en `/typescript-model/`. El lanzador vuelve a compilar antes de abrirla.
+La interfaz compilada queda en `dist/`; el servidor local la entrega en `/typescript-model/`.
 
 ## Desarrollo de la interfaz
 
@@ -142,7 +121,7 @@ El código está agrupado por responsabilidad. Para seguir un flujo, comienza en
 - **Hojas y recibos:** `src/features/spreadsheets/` normaliza importaciones y genera libros; `src/features/environment/consumption.ts` interpreta la extracción local de recibos.
 - **Facturación:** `src/app/screens/ElectronicInvoicing.tsx` contiene la interfaz; `src/features/invoicing/electronic-invoicing.ts` llama a la API local; `server/electronic_invoicing.py` define el contrato, parser UBL y adaptador configurable.
 - **Sincronización:** `src/features/synchronization/` contiene el cliente local de la API central; su pantalla está en `src/app/screens/CloudSyncPanel.tsx`.
-- **Arranque y recursos:** `src/main.tsx` monta React; `src/tailwind.css`, `index.html` y `vite.config.ts` configuran la entrada web; `Iniciar Pyme360.vbs` es solo un lanzador de desarrollo.
+- **Arranque y recursos:** `src/main.tsx` monta React; `src/tailwind.css`, `index.html` y `vite.config.ts` configuran la entrada web.
 - **Recursos de terceros:** los lectores y licencias incluidos están en `public/vendor/`; se conservan separados de la lógica de la aplicación. `xlsx.full.min.js` es SheetJS Community Edition 0.20.3, descargada de `https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js`.
 
 ## Flujos incluidos
@@ -179,7 +158,7 @@ Si aparece “no se pudo validar la sesión”, comprueba que el servidor local 
 
 ## Importación recomendada de Excel
 
-1. Inicia Pyme360 con `Iniciar Pyme360.vbs`.
+1. Inicia Pyme360 con `Abrir Pyme360.bat`.
 2. Entra con un usuario `admin` u `operator`.
 3. Abre **Datos y respaldo → Importar archivo Excel**.
 4. Selecciona un `.xlsx` o `.xls` de hasta 10 MB y 10.000 filas.

@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { outstandingBalance } from "../../domain/business";
 import { calculateMonthlyEnvironmentalMetrics } from "../../domain/environmental";
-import { calculateSavings, defaultBasePeriod } from "../../domain/insights";
+import {
+  calculateSavings,
+  defaultBasePeriod,
+  latestConsumptionPeriod,
+} from "../../domain/insights";
 import { buildTodayTasks, type TaskTarget } from "../../domain/today";
 import type { AppState } from "../../domain/types";
 import { formatPeriod, pluralize } from "../../shared/format";
@@ -37,7 +41,7 @@ export function HomePage({
   const tasks = buildTodayTasks(state, date);
   const metrics = calculateMonthlyEnvironmentalMetrics(state);
   const withData = metrics.filter((item) => item.dataCoveragePercent > 0);
-  const latest = withData.at(-1)?.period ?? null;
+  const latest = latestConsumptionPeriod(metrics) ?? withData.at(-1)?.period ?? null;
   const base = defaultBasePeriod(state, metrics);
   const savings = base && latest ? calculateSavings(state, base, latest, metrics) : null;
   const month = currentMonth();

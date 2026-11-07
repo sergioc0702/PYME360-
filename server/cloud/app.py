@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import psycopg
 from fastapi import FastAPI, HTTPException, Request
@@ -48,6 +49,14 @@ SYNC_ENTITY_TYPES = {
 SINGLETON_ENTITY_TYPES = {"company", "environmentalConfig", "taxConfiguration"}
 IMMUTABLE_ENTITY_TYPES = {"inventoryMovements", "cashMovements", "electronicDocuments", "supplierInvoices"}
 logger = logging.getLogger("pyme360.cloud")
+
+
+def development_mode() -> bool:
+    """Los enlaces de prueba solo se muestran en un equipo local y si se pidió expresamente."""
+    if os.environ.get("APP_ENV", "production").strip().lower() != "development":
+        return False
+    host = urlsplit(os.environ.get("PUBLIC_BASE_URL", "").strip()).hostname
+    return host in {"localhost", "127.0.0.1"}
 
 
 def utc_now() -> datetime:
@@ -106,7 +115,7 @@ def public_url(path: str, token: str) -> str:
 def send_email(recipient: str, subject: str, text_body: str, html_body: str) -> str | None:
     host = os.environ.get("SMTP_HOST", "").strip()
     if not host:
-        if os.environ.get("APP_ENV", "development").lower() != "production":
+        if development_mode():
             logger.warning("Correo de desarrollo para %s: %s", recipient, text_body)
             for line in text_body.splitlines():
                 if line.startswith("http"):
@@ -470,7 +479,7 @@ app = FastAPI(title="Pyme360 Cloud API", version="1.0.0")
 @app.on_event("startup")
 def startup() -> None:
     initialize_schema()
-    if os.environ.get("APP_ENV", "development").lower() == "production":
+    if not development_mode():
         required = ("PUBLIC_BASE_URL", "SMTP_HOST", "SMTP_FROM")
         if any(not os.environ.get(name) for name in required):
             raise RuntimeError("Configura PUBLIC_BASE_URL, SMTP_HOST y SMTP_FROM en producción.")
@@ -661,7 +670,7 @@ def request_password_reset(data: PasswordResetRequest, request: Request) -> dict
         if preview:
             reset_url = preview
     result = {"message": "Si la cuenta existe, recibirás un enlace de restablecimiento."}
-    if reset_url and os.environ.get("APP_ENV", "development").lower() != "production":
+    if reset_url and development_mode():
         result["developmentResetUrl"] = reset_url
     return result
 

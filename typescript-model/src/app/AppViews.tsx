@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { BusinessError } from "../domain/business";
 import {
+  changeOwnPassword,
   createFirstAdmin,
   createUser,
   deleteUser,
   listUsers,
   login,
+  resetUserPassword,
   setUserActive,
   updateUserRole,
   type AuthUser,
@@ -112,6 +114,7 @@ export type ModalState =
   | { type: "stock"; product: Product }
   | { type: "complete-production"; order: ProductionOrder }
   | { type: "users" }
+  | { type: "password" }
   | { type: "receipt"; extraction: ReceiptExtraction; fileName: string; fileHash: string }
   | { type: "environment-config" }
   | null;
@@ -619,6 +622,56 @@ export function LoginScreen({
   );
 }
 
+export function PasswordModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const next = String(data.get("newPassword") ?? "");
+    if (next !== String(data.get("confirmPassword") ?? "")) {
+      setError("Las dos contraseñas nuevas no coinciden.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await changeOwnPassword(String(data.get("currentPassword") ?? ""), next);
+      onDone();
+    } catch (reason) {
+      setError(errorMessage(reason));
+      setSaving(false);
+    }
+  }
+  return (
+    <Modal title="Cambiar mi contraseña" onClose={onClose}>
+      <form className="modal-body" onSubmit={(event) => void submit(event)}>
+        {error && <div className="notice warning">{error}</div>}
+        <div className="form-grid">
+          <Field label="Contraseña actual" name="currentPassword" type="password" required />
+          <Field label="Contraseña nueva" name="newPassword" type="password" required />
+          <Field
+            label="Repite la contraseña nueva"
+            name="confirmPassword"
+            type="password"
+            required
+          />
+        </div>
+        <p className="field-hint">
+          Usa al menos 8 caracteres. Tus sesiones abiertas en otros lugares se cerrarán.
+        </p>
+        <div className="modal-footer">
+          <button className="button button-secondary" type="button" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="button button-primary" type="submit" disabled={saving}>
+            {saving ? "Guardando…" : "Guardar"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 export function UsersModal({
   currentUser,
   onClose,
@@ -628,6 +681,8 @@ export function UsersModal({
 }) {
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [resetting, setResetting] = useState<AuthUser | null>(null);
   useEffect(() => {
     void listUsers()
       .then(setUsers)
@@ -645,6 +700,21 @@ export function UsersModal({
       );
       setUsers((current) => [...current, user]);
       form.reset();
+      setError("");
+    } catch (reason) {
+      setError(errorMessage(reason));
+    }
+  }
+  async function submitReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!resetting) return;
+    try {
+      await resetUserPassword(
+        resetting.id,
+        String(new FormData(event.currentTarget).get("newPassword") ?? ""),
+      );
+      setNotice(`Contraseña cambiada para ${resetting.username}. Sus sesiones se cerraron.`);
+      setResetting(null);
       setError("");
     } catch (reason) {
       setError(errorMessage(reason));
@@ -688,6 +758,29 @@ export function UsersModal({
           </div>
         </form>
         {error && <div className="notice warning">{error}</div>}
+        {notice && <div className="notice">{notice}</div>}
+        {resetting && (
+          <form className="form-grid" onSubmit={(event) => void submitReset(event)}>
+            <Field
+              label={`Contraseña nueva para ${resetting.username}`}
+              name="newPassword"
+              type="password"
+              required
+            />
+            <div className="field full">
+              <button className="button button-primary" type="submit">
+                Guardar contraseña
+              </button>{" "}
+              <button
+                className="button button-secondary"
+                type="button"
+                onClick={() => setResetting(null)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        )}
         <div className="alert-list">
           {users.map((user) => (
             <div className="alert-item" key={user.id}>
@@ -741,6 +834,16 @@ export function UsersModal({
                     }}
                   >
                     {user.active ? "Bloquear" : "Activar"}
+                  </button>
+                  <button
+                    className="button button-secondary button-small"
+                    type="button"
+                    onClick={() => {
+                      setNotice("");
+                      setResetting(user);
+                    }}
+                  >
+                    Cambiar contraseña
                   </button>
                   <button
                     className="icon-button"

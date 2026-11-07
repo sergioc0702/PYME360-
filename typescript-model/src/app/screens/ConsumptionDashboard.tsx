@@ -7,6 +7,7 @@ import {
   buildSavingsSuggestions,
   calculateSavings,
   defaultBasePeriod,
+  latestConsumptionPeriod,
   type ResourceSavings,
   type SavingsSuggestion,
 } from "../../domain/insights";
@@ -135,7 +136,7 @@ export function ConsumptionDashboard({
   const [chosenBase, setChosenBase] = useState<string | null>(null);
   const [chosenPeriod, setChosenPeriod] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const period = chosenPeriod ?? periods.at(-1) ?? null;
+  const period = chosenPeriod ?? latestConsumptionPeriod(metrics) ?? periods.at(-1) ?? null;
   const base = chosenBase ?? defaultBasePeriod(state, metrics);
   const month = metrics.find((item) => item.period === period);
   const savings = base && period ? calculateSavings(state, base, period, metrics) : null;
@@ -177,7 +178,7 @@ export function ConsumptionDashboard({
                 <input
                   type="file"
                   hidden
-                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                   onChange={(event) => {
                     const file = event.currentTarget.files?.[0];
                     if (file) onImport(file);

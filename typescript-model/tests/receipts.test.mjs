@@ -80,3 +80,29 @@ test("recuerda el proveedor del mismo servicio", () => {
   assert.equal(receipts.rememberedProvider(list, "electricity"), "EBSA");
   assert.equal(receipts.rememberedProvider(list, "fuel"), "");
 });
+
+test("reconoce EBSA y un acueducto sin E.S.P. cuando el logo no se lee", () => {
+  assert.equal(receipts.detectProvider("Propiedad Activos: Redes Aereas EBSA 21"), "EBSA");
+  assert.equal(
+    receipts.detectProvider("x\nACUEDUCTO REGIONAL DE PRUEBA\nFACTURA"),
+    "ACUEDUCTO REGIONAL DE PRUEBA",
+  );
+  assert.equal(receipts.detectProvider("SERVICIO ACUEDUCTO"), "");
+});
+
+test("descarta valores que una foto leyó mal", () => {
+  for (const wrong of ["00,500", "10.12", "647", "0"]) {
+    assert.equal(receipts.plausibleMoney(wrong), false, wrong);
+  }
+  for (const right of ["110.120", "80,500", "1.250.000", "98000"]) {
+    assert.equal(receipts.plausibleMoney(right), true, right);
+  }
+});
+
+test("el impuesto de alumbrado cuenta como otro cobro y el total del periodo es la energía", () => {
+  const text = "Imp Alum Publico 9.473\nTOTAL PERIODO $ 100.647\nTotal a Pagar 110.120";
+  assert.deepEqual(receipts.serviceAmount(text, "electricity", 110120), {
+    billedAmount: 100647,
+    otherServices: true,
+  });
+});

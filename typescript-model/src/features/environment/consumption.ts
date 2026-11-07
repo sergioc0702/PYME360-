@@ -44,7 +44,7 @@ function numberFromText(value: string): number {
 function firstMatch(text: string, expressions: RegExp[]): number {
   for (const expression of expressions) {
     const match = expression.exec(text);
-    if (match?.[1]) return numberFromText(match[1]);
+    if (match?.[1] && plausibleMoney(match[1])) return numberFromText(match[1]);
   }
   return 0;
 }
@@ -58,7 +58,15 @@ export function detectProvider(text: string): string {
       );
     if (match) return match[1].replace(/\s+/g, " ").trim();
   }
-  return "";
+  // En las fotos el logo casi nunca se lee: se acude a lo que el recibo sí repite.
+  if (/\bEBSA\b/.test(text)) return "EBSA";
+  const aqueduct = /^[^A-Za-zÁÉÍÓÚÑ]*(acueducto\s+[A-Za-zÁÉÍÓÚÑáéíóúñ ]{3,50})$/im.exec(text);
+  return aqueduct ? aqueduct[1].replace(/\s+/g, " ").trim() : "";
+}
+
+/** Una foto puede leer "$00,500" o "10.12": mejor dejar el valor vacío que guardar uno falso. */
+export function plausibleMoney(value: string): boolean {
+  return /^[1-9]\d{0,2}(?:[.,]\d{3})+$|^[1-9]\d{3,}$/.test(value.trim());
 }
 
 const MONEY = String.raw`\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d{4,})(?![\d.,]*\s*(?:kwh|m3|m³))`;
@@ -73,8 +81,8 @@ const SERVICE_WORDS = {
     amount: nearby("acueducto|agua", "alcantarillado|aseo|energ[ií]a|total a pagar"),
   },
   electricity: {
-    others: /alumbrado|\baseo\b|acueducto/i,
-    amount: nearby("energ[ií]a", "alumbrado|aseo|acueducto|total a pagar"),
+    others: /alumbrado|alum\.?\s*p[uú]blico|\baseo\b|acueducto/i,
+    amount: nearby("energ[ií]a|total periodo", "alumbrado|aseo|acueducto|total a pagar"),
   },
 };
 
@@ -127,13 +135,17 @@ export async function extractReceipt(
   const text = result.textPreview || "";
   const resource = result.type === "water" ? "water" : "electricity";
   const invoiceNumber = (
-    /(?:factura|número de factura|no\.?)\s*[:#-]?\s*([A-Z0-9-]{4,})/i.exec(text)?.[1] ?? ""
+    /(?:factura|número de factura|no\.?)\s*[:#-]?\s*((?=[A-Z-]*\d)[A-Z0-9-]{4,})/i.exec(
+      text,
+    )?.[1] ?? ""
   ).trim();
   const total = firstMatch(text, [
     /(?:total a pagar|valor total|total factura)[^\d]{0,40}[$\s]*([\d.,]+)/i,
   ]);
   const { billedAmount, otherServices } = serviceAmount(text, resource, total);
   const warnings = [...result.warnings];
+  if (!billedAmount)
+    warnings.push("No pudimos leer el valor con seguridad. Escríbelo mirando el recibo.");
   return {
     fileHash: await hashFile(file),
     extraction: {

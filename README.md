@@ -2,30 +2,17 @@
 
 Pyme360 es un ERP local para una pyme manufacturera colombiana. Incluye una interfaz React/TypeScript, servidor Python, base SQLite, usuarios locales, permisos y respaldos. Los datos de negocio se quedan en el computador y los libros de Excel se procesan localmente.
 
-## Ejecutar Pyme360 en Windows
+## Abrir Pyme360
 
-Descarga `Pyme360.exe` desde **Releases** de GitHub y ábrelo. Es una aplicación portable: no instala servicios ni modifica el registro, y puede ejecutarse desde cualquier carpeta con permisos de lectura y escritura. Windows debe tener Microsoft Edge WebView2 Runtime; normalmente viene instalado con Edge. Si falta, instala el Runtime de Microsoft y vuelve a abrir la aplicación.
+Haz doble clic en `Abrir Pyme360.bat`. Se abre una ventana negra y después el navegador con la aplicación. Deja esa ventana abierta mientras trabajas; al cerrarla, Pyme360 se detiene.
 
-La primera ejecución solicita crear el administrador. La base SQLite y los respaldos se guardan fuera del programa, en `%LOCALAPPDATA%\Pyme360\`; mover o reemplazar `Pyme360.exe` no mueve ni elimina los datos. No copies una base SQLite dentro del ejecutable o de la carpeta de distribución.
+Necesitas Python 3.11 o superior. La primera vez también necesitas Node.js 22 o superior, porque el lanzador prepara la pantalla por su cuenta; esa primera apertura tarda unos minutos. Después solo vuelve a compilar si cambió el código.
 
-### Construir el ejecutable
+La primera apertura pide crear el administrador. La base SQLite y los respaldos se guardan fuera del programa, en `%LOCALAPPDATA%\Pyme360\`. Actualizar el código o mover la carpeta no mueve ni elimina los datos.
 
-En Windows instala Python 3.11 o superior, Node.js 22 o superior y Microsoft Edge WebView2 Runtime. Antes de compilar por primera vez, ejecuta `npm ci` desde `typescript-model/`. Después, desde PowerShell en la carpeta del proyecto, ejecuta:
+En macOS usa `Abrir Pyme360.command` y en Linux `Abrir-Pyme360.sh`.
 
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\desktop\build-executable.ps1
-```
-
-El script compila React y crea `outputs/releases/Pyme360.exe` como ejecutable portable de un solo archivo. Las dependencias de compilación quedan en `.build/desktop/`; el ejecutable incluye la interfaz y recursos necesarios, pero no la base de datos ni las credenciales del usuario.
-
-El flujo `.github/workflows/windows-desktop.yml` compila el ejecutable al ejecutarlo manualmente o al publicar un tag `v*`. Para una versión nueva, actualiza `VERSION`, crea el tag coincidente (por ejemplo `v1.0.1`) y súbelo; el flujo publica `Pyme360.exe` en **Releases**.
-
-## Ejecutar desde el código fuente
-
-Los lanzadores de navegador siguen disponibles para desarrollo y macOS/Linux. Requieren Python 3.11 o superior. En Windows, ejecuta `Abrir Pyme360.bat`; en macOS, ejecuta `Abrir Pyme360.command`; en Linux, marca `Abrir-Pyme360.sh` como ejecutable y ábrelo. Para modificar la interfaz React necesitas Node.js; consulta [typescript-model/README.md](typescript-model/README.md).
-
-Inicia siempre Pyme360 con el lanzador: la base SQLite solo está disponible a través del servidor local. La selección del recibo se hace desde el navegador; el archivo se procesa localmente y no se conserva. La interfaz React consulta referencias públicas ODS y datos operativos agregados del sistema eléctrico colombiano desde el servidor local; las lecturas de la empresa no se envían a esas fuentes.
+Inicia siempre Pyme360 con el lanzador: la base SQLite solo está disponible a través del servidor local. La selección del recibo se hace desde el navegador; el archivo se procesa localmente y no se conserva.
 
 En modo local, los datos permanecen en este equipo. La sincronización central es opcional y requiere infraestructura propia; no hace falta para instalar o usar el ERP local.
 
@@ -38,9 +25,7 @@ git clone https://github.com/sergioc0702/PYME360-.git
 cd PYME360-
 ```
 
-El repositorio incluye la interfaz React, el servidor local, las pruebas, la documentación y el código fuente de la aplicación de escritorio. Conserva `typescript-model/public/vendor/receipt-reader`: contiene las librerías locales que necesita la lectura de recibos. `.gitignore` excluye SQLite, `.env`, respaldos, dependencias, ejecutables generados y artefactos de compilación. No fuerces esos archivos con `git add -f`.
-
-Las versiones publicadas aparecen en [GitHub Releases](https://github.com/sergioc0702/PYME360-/releases). El flujo `.github/workflows/windows-desktop.yml` construye y publica `Pyme360.exe` cuando subes un tag `v*` que coincida con `VERSION` (por ejemplo, `VERSION=1.0.1` y tag `v1.0.1`). El ejecutable generado no se versiona dentro del repositorio.
+El repositorio incluye la interfaz React, el servidor local, las pruebas, y la documentación. Conserva `typescript-model/public/vendor/receipt-reader`: contiene las librerías locales que necesita la lectura de recibos. `.gitignore` excluye SQLite, `.env`, respaldos, dependencias, ejecutables generados y artefactos de compilación. No fuerces esos archivos con `git add -f`.
 
 Este es un proyecto local, no un servicio web alojado. **Subirlo a GitHub no permite que varios usuarios compartan automáticamente la misma base de datos.** GitHub Pages solo publica archivos estáticos y no ejecuta `server/serve-local.py`; para cuentas y sincronización entre equipos hay que desplegar la API central, PostgreSQL, correo, HTTPS y copias de seguridad descritos en [server/cloud/README.md](server/cloud/README.md).
 
@@ -79,12 +64,11 @@ No subas a GitHub datos reales de clientes, proveedores, facturas o usuarios. Py
 
 ## Organización del proyecto
 
-- `typescript-model/` contiene la interfaz React/TypeScript y, en `public/vendor/`, las librerías locales de Excel y lectura de recibos; su lanzador de Windows la compila y abre bajo `/typescript-model/`.
-- `server/` contiene el servidor Python local y su lanzador PowerShell.
+- `typescript-model/` contiene la interfaz React/TypeScript y, en `public/vendor/`, las librerías locales de Excel y lectura de recibos.
+- `server/` contiene el servidor Python local.
 - `docs/GUIA_DE_USO.md` contiene la guía paso a paso.
 - `docs/analysis/ERP_ANALYSIS_SUMMARY.md` contiene el análisis técnico y funcional del proyecto.
-- `desktop/` contiene el punto de entrada de la aplicación de escritorio, las dependencias de empaquetado y el script para construir el ejecutable portable.
-- Los lanzadores de Windows, macOS y Linux permanecen en la raíz para que sea fácil abrir Pyme360.
+- El lanzador de Windows y los de macOS y Linux están en la raíz para que sea fácil abrir Pyme360.
 
 El servidor sirve la compilación de `typescript-model/dist/` y mantiene la API local y los datos SQLite externos al repositorio.
 

@@ -1,18 +1,84 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import type { AppState } from "../../domain/types";
 import type { UserRole } from "../../infrastructure/auth";
+import {
+  decryptBackup,
+  encryptBackup,
+  isEncryptedBackup,
+} from "../../infrastructure/backup-crypto";
 import { serializeBackup } from "../../infrastructure/storage";
-import { formatNumber, today } from "../AppViews";
+import { Field, Modal, errorMessage, formatNumber, today } from "../AppViews";
 import { ExcelImportWizard } from "./ExcelImport";
 
-function downloadBackup(state: AppState): void {
-  const file = new Blob([serializeBackup(state)], { type: "application/json" });
+async function downloadBackup(state: AppState, password: string): Promise<void> {
+  const content = await encryptBackup(serializeBackup(state), password);
+  const file = new Blob([content], { type: "application/json" });
   const url = URL.createObjectURL(file);
   const link = document.createElement("a");
   link.href = url;
   link.download = `pyme360-respaldo-${today()}.json`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function BackupPasswordModal({
+  onSubmit,
+  onClose,
+  mode,
+}: {
+  onSubmit: (password: string) => Promise<void>;
+  onClose: () => void;
+  mode: "protect" | "open";
+}) {
+  const [error, setError] = useState("");
+  const [working, setWorking] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const password = String(data.get("backupPassword") ?? "");
+    if (mode === "protect") {
+      if (password.length < 8) return setError("Usa al menos 8 caracteres.");
+      if (password !== String(data.get("backupConfirm") ?? ""))
+        return setError("Las dos contraseñas no coinciden.");
+    }
+    setWorking(true);
+    setError("");
+    try {
+      await onSubmit(password);
+    } catch (reason) {
+      setError(errorMessage(reason));
+      setWorking(false);
+    }
+  }
+  return (
+    <Modal
+      title={mode === "protect" ? "Proteger el respaldo" : "Abrir el respaldo"}
+      onClose={onClose}
+    >
+      <form className="modal-body" onSubmit={(event) => void submit(event)}>
+        {error && <div className="notice warning">{error}</div>}
+        <div className="form-grid">
+          <Field label="Contraseña del respaldo" name="backupPassword" type="password" required />
+          {mode === "protect" && (
+            <Field label="Repite la contraseña" name="backupConfirm" type="password" required />
+          )}
+        </div>
+        {mode === "protect" && (
+          <div className="notice warning">
+            Guárdala en un lugar seguro. Si la olvidas, nadie podrá abrir este respaldo.
+          </div>
+        )}
+        <div className="modal-footer">
+          <button className="button button-secondary" type="button" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="button button-primary" type="submit" disabled={working}>
+            {working ? "Un momento…" : mode === "protect" ? "Descargar" : "Abrir"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
 }
 
 /** Datos y respaldo: sacar una copia, recuperarla y mover datos con Excel. */
@@ -37,6 +103,10 @@ export function DataPage({
 }) {
   const [exportingExcel, setExportingExcel] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [protecting, setProtecting] = useState(false);
+  const [encryptedFile, setEncryptedFile] = useState<{ name: string; content: string } | null>(
+    null,
+  );
   const counts = [
     ["Clientes y proveedores", state.contacts.length],
     ["Productos", state.products.length],
@@ -55,6 +125,12 @@ export function DataPage({
     ["Datos adicionales importados", state.importExtras.length],
   ] as const;
 
+  async function chooseBackup(file: File) {
+    const content = await file.text();
+    if (isEncryptedBackup(content)) setEncryptedFile({ name: file.name, content });
+    else onRestore(file);
+  }
+
   async function exportWorkbook() {
     setExportingExcel(true);
     try {
@@ -72,7 +148,8 @@ export function DataPage({
       <p className="screen-note">
         Tus datos se guardan en este computador y cada día se hace una copia aquí mismo. Si el
         computador se daña, esa copia se puede perder: descarga también un respaldo y guárdalo en
-        otro lugar.
+        otro lugar. Esos archivos internos no están cifrados, así que usa una contraseña de Windows
+        propia y activa el cifrado del dispositivo.
       </p>
       {readOnly && (
         <p className="screen-note">
@@ -86,9 +163,11 @@ export function DataPage({
           <li>
             <div>
               <strong>Descargar un respaldo</strong>
-              <span>Un archivo con todos los datos de tu empresa.</span>
+              <span>
+                Un archivo con todos los datos de tu empresa, protegido con una contraseña.
+              </span>
             </div>
-            <button className="action-primary" type="button" onClick={() => downloadBackup(state)}>
+            <button className="action-primary" type="button" onClick={() => setProtecting(true)}>
               Descargar respaldo
             </button>
           </li>
@@ -110,7 +189,7 @@ export function DataPage({
                   accept="application/json,.json"
                   onChange={(event) => {
                     const file = event.currentTarget.files?.[0];
-                    if (file) onRestore(file);
+                    if (file) void chooseBackup(file);
                     event.currentTarget.value = "";
                   }}
                 />
@@ -197,6 +276,27 @@ export function DataPage({
         Pyme360 no entra a los portales de las empresas de servicios ni guarda sus claves.
       </p>
 
+      {protecting && (
+        <BackupPasswordModal
+          mode="protect"
+          onClose={() => setProtecting(false)}
+          onSubmit={async (password) => {
+            await downloadBackup(state, password);
+            setProtecting(false);
+          }}
+        />
+      )}
+      {encryptedFile && (
+        <BackupPasswordModal
+          mode="open"
+          onClose={() => setEncryptedFile(null)}
+          onSubmit={async (password) => {
+            const content = await decryptBackup(encryptedFile.content, password);
+            setEncryptedFile(null);
+            onRestore(new File([content], encryptedFile.name, { type: "application/json" }));
+          }}
+        />
+      )}
       {importOpen && onImportWorkbook && (
         <ExcelImportWizard
           state={state}

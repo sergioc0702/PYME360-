@@ -250,7 +250,7 @@ export function ExcelImportWizard({ state, role, onCommit, onClose }: ExcelImpor
         <header className="modal-header">
           <div>
             <h2 id="excel-import-title">Importar datos desde Excel</h2>
-            <p>El archivo se lee en este navegador. Solo las filas válidas se guardan en SQLite.</p>
+            <p>El archivo se lee en este computador. Solo se guardan las filas correctas.</p>
           </div>
           <button
             className="icon-button"
@@ -302,7 +302,7 @@ export function ExcelImportWizard({ state, role, onCommit, onClose }: ExcelImpor
                 type="button"
                 onClick={addRecognizedSheets}
               >
-                Reconocer hojas del libro maestro
+                Reconocer todas las hojas
               </button>
             )}
             {workbook && (
@@ -425,7 +425,7 @@ export function ExcelImportWizard({ state, role, onCommit, onClose }: ExcelImpor
                     disabled={isComputedImportSheet(selectedSheet.name)}
                     onClick={addCurrentSheet}
                   >
-                    Agregar / reemplazar hoja en el lote
+                    Agregar esta hoja
                   </button>
                 </div>
               </section>
@@ -433,10 +433,7 @@ export function ExcelImportWizard({ state, role, onCommit, onClose }: ExcelImpor
                 <div className="excel-import-section-heading">
                   <div>
                     <strong>3. Vista previa y confirmación</strong>
-                    <span>
-                      Agrega las hojas que necesites; el lote se guardará con una sola operación
-                      SQLite.
-                    </span>
+                    <span>Agrega las hojas que necesites. Todas se guardan juntas al final.</span>
                   </div>
                 </div>
                 {staged.length > 0 ? (
@@ -536,14 +533,14 @@ export function ExcelImportWizard({ state, role, onCommit, onClose }: ExcelImpor
                         onClick={() => void confirmImport()}
                         disabled={busy || !preview.added}
                       >
-                        {busy ? "Guardando lote…" : `Importar ${readyCount} fila(s) válida(s)`}
+                        {busy ? "Guardando…" : `Importar ${readyCount} fila(s) válida(s)`}
                       </button>
                     </footer>
                   </>
                 ) : (
                   <div className="empty-state">
-                    Agrega una hoja para preparar la vista previa. Puedes incluir varias hojas del
-                    mismo libro en un solo lote.
+                    Agrega una hoja para ver cómo quedarán los datos. Puedes incluir varias hojas
+                    del mismo archivo.
                   </div>
                 )}
               </section>

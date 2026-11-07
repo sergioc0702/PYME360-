@@ -140,6 +140,20 @@ export function calculateSavings(
 }
 
 /** Mes base: el de la meta de energía aprobada o, si no hay, el primero con electricidad. */
+/** Último mes con recibos. Una venta del mes en curso no lo convierte en mes de consumo. */
+export function latestConsumptionPeriod(
+  metrics: Array<{
+    period: string;
+    electricityKwh: number | null;
+    waterWithdrawalM3: number | null;
+  }>,
+): string | null {
+  return (
+    metrics.filter((item) => item.electricityKwh !== null || item.waterWithdrawalM3 !== null).at(-1)
+      ?.period ?? null
+  );
+}
+
 export function defaultBasePeriod(
   state: AppState,
   metrics = calculateMonthlyEnvironmentalMetrics(state),

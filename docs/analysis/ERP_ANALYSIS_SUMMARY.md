@@ -34,7 +34,7 @@
 - **Frontend**: TypeScript + React 19 + Vite
 - **Estilado**: Tailwind CSS v4 (plugin oficial de Vite; tokens y estilos base en `src/tailwind.css`)
 - **Backend local**: Python 3.11+ y SQLite; la API central opcional usa FastAPI y PostgreSQL.
-- **Escritorio**: `desktop/launcher.py` abre la interfaz compilada en WebView2; `desktop/build-executable.ps1` genera un `.exe` portable de un solo archivo.
+- **Apertura**: `Abrir Pyme360.bat` inicia el servidor local, que compila la interfaz si hace falta y abre el navegador.
 
 ### Estructura de Carpetas (`typescript-model/`):
 ```
@@ -57,7 +57,6 @@ src/
 - **Modelo y reglas**: `src/domain/` mantiene tipos, operaciones y cálculos independientes de la interfaz.
 - **Capacidades**: `src/features/` separa ambiente, facturación, hojas de cálculo y sincronización.
 - **Persistencia y acceso**: `src/infrastructure/` conecta SQLite, API local y autenticación.
-- **Escritorio**: `desktop/launcher.py` inicia el servidor local y WebView2; el build incluye frontend y recursos estáticos dentro del ejecutable, pero conserva SQLite en el directorio de datos del usuario.
 - **API central**: `server/cloud/` contiene FastAPI, validación de lotes y esquema PostgreSQL.
 
 ### Interacción entre Capas:
