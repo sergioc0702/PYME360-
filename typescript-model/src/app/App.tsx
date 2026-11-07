@@ -56,7 +56,7 @@ import type {
 } from "../domain/types";
 import { clearSession, initializeAuth, type AuthUser, type AuthStatus } from "../infrastructure/auth";
 import { loadState, parseBackup, saveState, StateConflictError } from "../infrastructure/storage";
-import { extractReceipt } from "../features/environment/consumption";
+import { extractReceipt, rememberedProvider } from "../features/environment/consumption";
 import {
   PAGE_TITLES,
   NAV_GROUPS,
@@ -377,7 +377,14 @@ function Workspace({
   function importReceipt(file: File) {
     void extractReceipt(file, (label) => notify(label))
       .then(({ extraction, fileHash }) => {
-        setModal({ type: "receipt", extraction, fileName: file.name, fileHash });
+        const provider =
+          extraction.provider || rememberedProvider(state.receiptImports, extraction.resource);
+        setModal({
+          type: "receipt",
+          extraction: { ...extraction, provider },
+          fileName: file.name,
+          fileHash,
+        });
       })
       .catch((error: unknown) => notify(errorMessage(error), true));
   }

@@ -473,6 +473,8 @@ export interface ReceiptExtraction {
   waterM3?: number;
   fuelLiters?: number;
   billedAmount: number;
+  /** El recibo cobra otros servicios: el valor debe ser solo el de este servicio. */
+  otherServicesDetected?: boolean;
   invoiceNumber: string;
   provider: string;
   confidence: number;

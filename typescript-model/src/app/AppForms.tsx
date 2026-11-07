@@ -1330,6 +1330,11 @@ export function ReceiptReviewForm({
     extraction.resource ?? "electricity",
   );
   const defaultUnits = { electricity: "kWh", water: "m³", fuel: "L" };
+  const amountLabels = {
+    electricity: "Valor de la energía (COP)",
+    water: "Valor del agua (COP)",
+    fuel: "Valor del combustible (COP)",
+  };
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -1365,6 +1370,12 @@ export function ReceiptReviewForm({
             </ul>
           )}
         </div>
+        {extraction.otherServicesDetected && (
+          <div className="notice warning">
+            Este recibo también cobra otros servicios. En el valor escribe solo lo de este servicio,
+            sin aseo, alcantarillado ni otros cobros.
+          </div>
+        )}
         <div className="form-grid">
           <Field
             label="Período"
@@ -1409,7 +1420,8 @@ export function ReceiptReviewForm({
             required
           />
           <Field
-            label="Valor facturado (COP)"
+            key={`amount-${resource}`}
+            label={amountLabels[resource]}
             name="billedAmount"
             type="number"
             initialValue={extraction.billedAmount}
