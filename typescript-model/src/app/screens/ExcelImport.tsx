@@ -1,5 +1,7 @@
 import { useMemo, useState, type ChangeEvent } from "react";
 import type { AppState } from "../../domain/types";
+import { SmartImportPanel } from "./SmartImportPanel";
+import type { SmartSheetResult } from "../../features/spreadsheets/smart-import";
 import {
   autoMapColumns,
   buildImportPlan,
@@ -196,6 +198,19 @@ export function ExcelImportWizard({ state, role, onCommit, onClose }: ExcelImpor
     setError("");
   }
 
+  function useSmartProposal(results: SmartSheetResult[]) {
+    setStaged(
+      results
+        .filter((item) => item.rows.length)
+        .map((item) => ({
+          sheetName: item.sheetName,
+          moduleId: item.moduleId,
+          rows: item.rows,
+        })),
+    );
+    setError("");
+  }
+
   async function confirmImport() {
     if (!preview.added) return;
     const summary = `Se procesarán ${readyCount} filas válidas. Se agregarán sus registros base y los movimientos iniciales que correspondan. ${preview.duplicates} duplicadas y ${preview.errors} con error se omitirán. ¿Continuar?`;
@@ -249,10 +264,10 @@ export function ExcelImportWizard({ state, role, onCommit, onClose }: ExcelImpor
         <div className="modal-body excel-import-body">
           <div className="excel-import-toolbar">
             <label className="button button-primary">
-              {busy ? "Procesando…" : "Seleccionar .xlsx o .xls"}
+              {busy ? "Procesando…" : "Seleccionar .xlsx, .xls o .csv"}
               <input
                 type="file"
-                accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                 hidden
                 disabled={busy}
                 onChange={(event) => void chooseFile(event)}
@@ -300,6 +315,14 @@ export function ExcelImportWizard({ state, role, onCommit, onClose }: ExcelImpor
             <div className="notice warning" role="alert">
               {error}
             </div>
+          )}
+          {workbook && (
+            <SmartImportPanel
+              key={workbook.fileName}
+              workbook={workbook}
+              state={state}
+              onUse={useSmartProposal}
+            />
           )}
           {workbook && selectedSheet && (
             <>
@@ -529,7 +552,7 @@ export function ExcelImportWizard({ state, role, onCommit, onClose }: ExcelImpor
           {!workbook && !error && (
             <div className="excel-import-empty">
               <strong>Selecciona un libro Excel</strong>
-              <span>Admite .xlsx y .xls · máximo 10 MB y 10.000 filas por libro.</span>
+              <span>Admite .xlsx, .xls y .csv · máximo 10 MB y 10.000 filas por libro.</span>
             </div>
           )}
         </div>

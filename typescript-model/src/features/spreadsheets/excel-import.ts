@@ -1,3 +1,4 @@
+import { decodeText, parseDelimitedText } from "./delimited";
 import type {
   AppState,
   CashMovement,
@@ -223,14 +224,33 @@ export const IMPORT_MODULES: ImportModuleDefinition[] = [
     fields: [
       field("recipeId", "ID receta", "text", ["id receta"]),
       field("versionId", "ID versión", "text", ["id version", "version id"]),
-      field("versionNumber", "Número de versión", "number", ["version", "numero version", "numero de version"]),
-      field("versionStatus", "Estado de versión", "enum", ["estado version", "estado de version", "estado receta"]),
-      field("baseQuantity", "Cantidad base del lote", "number", ["cantidad base", "lote base", "cantidad base del lote"]),
-      field("expectedYieldPercent", "Rendimiento esperado (%)", "number", ["rendimiento esperado", "rendimiento (%)", "rendimiento esperado (%)"]),
+      field("versionNumber", "Número de versión", "number", [
+        "version",
+        "numero version",
+        "numero de version",
+      ]),
+      field("versionStatus", "Estado de versión", "enum", [
+        "estado version",
+        "estado de version",
+        "estado receta",
+      ]),
+      field("baseQuantity", "Cantidad base del lote", "number", [
+        "cantidad base",
+        "lote base",
+        "cantidad base del lote",
+      ]),
+      field("expectedYieldPercent", "Rendimiento esperado (%)", "number", [
+        "rendimiento esperado",
+        "rendimiento (%)",
+        "rendimiento esperado (%)",
+      ]),
       field("createdAt", "Creada el", "text", ["fecha creacion", "creada el"]),
       field("activatedAt", "Activada el", "text", ["fecha activacion", "activada el"]),
       field("unit", "Unidad del material", "text", ["unidad material", "unidad componente"]),
-      field("productName", "Producto terminado", "text", ["nombre producto terminado", "producto terminado"]),
+      field("productName", "Producto terminado", "text", [
+        "nombre producto terminado",
+        "producto terminado",
+      ]),
       field("materialName", "Material", "text", ["nombre material", "material"]),
       field("productId", "ID producto terminado", "text", ["producto id", "id producto terminado"]),
       field(
@@ -240,7 +260,11 @@ export const IMPORT_MODULES: ImportModuleDefinition[] = [
         ["producto sku", "sku producto terminado"],
         true,
       ),
-      field("materialProductId", "ID material", "text", ["material id", "id material", "id insumo"]),
+      field("materialProductId", "ID material", "text", [
+        "material id",
+        "id material",
+        "id insumo",
+      ]),
       field(
         "materialSku",
         "SKU material",
@@ -252,7 +276,13 @@ export const IMPORT_MODULES: ImportModuleDefinition[] = [
         "quantity",
         "Cantidad del componente",
         "number",
-        ["cantidad por unidad", "cantidad", "consumo unitario", "cantidad componente", "cantidad del componente"],
+        [
+          "cantidad por unidad",
+          "cantidad",
+          "consumo unitario",
+          "cantidad componente",
+          "cantidad del componente",
+        ],
         true,
       ),
     ],
@@ -501,12 +531,32 @@ export const IMPORT_MODULES: ImportModuleDefinition[] = [
       ]),
       field("quantity", "Cantidad", "number", ["unidades", "cantidad a producir"], true),
       field("wasteQuantity", "Desperdicio", "number", ["desperdicio", "desperdicio kg"]),
-      field("estimatedMaterialCost", "Costo estimado materiales COP", "number", ["costo estimado materiales", "costo directo materiales"]),
-      field("materialCostPerGoodUnit", "Costo materiales por unidad buena COP", "number", ["costo materiales por unidad buena", "costo unitario materiales"]),
-      field("recipeVersionId", "ID versión de receta", "text", ["version receta id", "id version receta", "id version de receta"]),
-      field("recipeVersionNumber", "Número de versión de receta", "number", ["version receta", "numero version receta", "numero de version de receta"]),
-      field("expectedYieldPercent", "Rendimiento esperado (%)", "number", ["rendimiento esperado", "rendimiento (%)"]),
-      field("expectedGoodOutputQuantity", "Salida buena esperada", "number", ["unidades buenas esperadas", "salida esperada"]),
+      field("estimatedMaterialCost", "Costo estimado materiales COP", "number", [
+        "costo estimado materiales",
+        "costo directo materiales",
+      ]),
+      field("materialCostPerGoodUnit", "Costo materiales por unidad buena COP", "number", [
+        "costo materiales por unidad buena",
+        "costo unitario materiales",
+      ]),
+      field("recipeVersionId", "ID versión de receta", "text", [
+        "version receta id",
+        "id version receta",
+        "id version de receta",
+      ]),
+      field("recipeVersionNumber", "Número de versión de receta", "number", [
+        "version receta",
+        "numero version receta",
+        "numero de version de receta",
+      ]),
+      field("expectedYieldPercent", "Rendimiento esperado (%)", "number", [
+        "rendimiento esperado",
+        "rendimiento (%)",
+      ]),
+      field("expectedGoodOutputQuantity", "Salida buena esperada", "number", [
+        "unidades buenas esperadas",
+        "salida esperada",
+      ]),
       field("status", "Estado", "enum", ["estado"], true),
       field("completedAt", "Fecha de cierre", "date", ["fecha cierre", "fecha terminacion"]),
     ],
@@ -527,7 +577,9 @@ export const IMPORT_MODULES: ImportModuleDefinition[] = [
       field("environmentalConversionFactor", "Conversión ambiental", "number", [
         "conversion ambiental",
       ]),
-      field("unitCostSnapshot", "Costo unitario snapshot COP", "number", ["costo unitario snapshot"]),
+      field("unitCostSnapshot", "Costo unitario snapshot COP", "number", [
+        "costo unitario snapshot",
+      ]),
       field("lineCostSnapshot", "Costo línea snapshot COP", "number", ["costo linea snapshot"]),
     ],
     autoRequired: ["orderNumber", "materialSku", "quantity"],
@@ -577,6 +629,7 @@ export const IMPORT_MODULES: ImportModuleDefinition[] = [
       field("siteId", "Sede", "text", ["sede", "id sede"]),
       field("source", "Origen técnico", "enum", ["fuente tecnica", "origen tecnico"]),
       field("quality", "Calidad", "enum", ["calidad"], true),
+      field("billedAmount", "Valor pagado", "number", ["valor pagado", "valor"]),
       field("sourceLabel", "Fuente / descripción", "text", ["origen", "fuente", "descripcion"]),
       field("capturedAt", "Capturada", "date", ["fecha captura", "capturada"]),
       field("materialProductId", "ID material", "text", ["id producto material"]),
@@ -807,8 +860,16 @@ function xlsxApi(): SheetJsApi {
 }
 
 export async function readExcelWorkbook(file: File): Promise<ExcelWorkbookData> {
-  if (!/\.xlsx?$|\.xls$/i.test(file.name)) throw new Error("Elige un archivo Excel .xlsx o .xls.");
+  if (!/\.(xlsx?|csv|txt)$/i.test(file.name))
+    throw new Error("Elige un archivo .xlsx, .xls o .csv.");
   if (file.size > 10 * 1024 * 1024) throw new Error("El archivo supera el límite local de 10 MB.");
+  if (/\.(csv|txt)$/i.test(file.name)) {
+    const rows = parseDelimitedText(decodeText(await file.arrayBuffer()));
+    if (!rows.length) throw new Error("El archivo no contiene filas para importar.");
+    if (rows.length > 10_000)
+      throw new Error("El archivo contiene más de 10.000 filas. Divídelo en varios archivos.");
+    return { fileName: file.name, sheets: [{ name: file.name.replace(/\.\w+$/, ""), rows }] };
+  }
   const api = xlsxApi();
   let workbook: SheetJsWorkbook;
   try {
@@ -925,9 +986,7 @@ export function mapBundledCatalogSampleColumns(
   sheet: ExcelSheetData,
   headerRow = 0,
 ): Record<string, number | null> {
-  const headers = (sheet.rows[headerRow] ?? []).map((cell) =>
-    normalizeHeader(String(cell ?? "")),
-  );
+  const headers = (sheet.rows[headerRow] ?? []).map((cell) => normalizeHeader(String(cell ?? "")));
   const sampleHeaders: Record<string, string> = {
     sku: "Referencia de catálogo",
     name: "Nombre comercial",
@@ -1591,8 +1650,9 @@ function importProducts(
         unitCost: fieldNumber(row, "unitCost", false, 0),
         unitPrice: fieldNumber(row, "unitPrice", false, 0),
         vatRate: fieldNumber(row, "vatRate", false, 0),
-        taxCategory:
-          parseEnum<ProductTaxCategory>(row.values.taxCategory, {
+        taxCategory: parseEnum<ProductTaxCategory>(
+          row.values.taxCategory,
+          {
             unclassified: "unclassified",
             "por clasificar": "unclassified",
             taxable: "taxable",
@@ -1603,7 +1663,9 @@ function importProducts(
             excluido: "excluded",
             not_applicable: "not_applicable",
             "no aplica": "not_applicable",
-          }) ?? "unclassified",
+          },
+          "unclassified",
+        ),
         environmentalUnit: textOptional(row, "environmentalUnit"),
         environmentalConversionFactor: optionalNumber(row, "environmentalConversionFactor"),
         recycledContentPercent: optionalNumber(row, "recycledContentPercent"),
@@ -1738,18 +1800,38 @@ function importRecipes(
   rows: PreparedImportRow[],
   results: ImportRowResult[],
 ): void {
-  const grouped = new Map<string, Array<{ row: PreparedImportRow; component: { productId: string; quantity: number } }>>();
+  const grouped = new Map<
+    string,
+    Array<{ row: PreparedImportRow; component: { productId: string; quantity: number } }>
+  >();
   for (const row of rowsFor(rows, "recipes")) {
     try {
-      const finished = resolveProduct(state, fieldText(row, "productId"), fieldText(row, "productSku"));
-      const material = resolveProduct(state, fieldText(row, "materialProductId"), fieldText(row, "materialSku"));
-      if (finished.type !== "finished" || material.type === "finished" || material.id === finished.id)
-        throw new Error("La receta debe relacionar un producto terminado con un material o insumo distinto.");
+      const finished = resolveProduct(
+        state,
+        fieldText(row, "productId"),
+        fieldText(row, "productSku"),
+      );
+      const material = resolveProduct(
+        state,
+        fieldText(row, "materialProductId"),
+        fieldText(row, "materialSku"),
+      );
+      if (
+        finished.type !== "finished" ||
+        material.type === "finished" ||
+        material.id === finished.id
+      )
+        throw new Error(
+          "La receta debe relacionar un producto terminado con un material o insumo distinto.",
+        );
       const quantity = fieldNumber(row, "quantity", true);
       if (quantity <= 0) throw new Error("La cantidad del componente debe ser mayor que cero.");
       const versionId = fieldText(row, "versionId") || `legacy-version-${finished.id}`;
       const key = `${finished.id}\u0000${versionId}`;
-      grouped.set(key, [...(grouped.get(key) ?? []), { row, component: { productId: material.id, quantity } }]);
+      grouped.set(key, [
+        ...(grouped.get(key) ?? []),
+        { row, component: { productId: material.id, quantity } },
+      ]);
     } catch (error) {
       markError(results, row, error instanceof Error ? error.message : "Receta no válida.");
     }
@@ -1763,18 +1845,33 @@ function importRecipes(
     const hasVersionMetadata = ["versionNumber", "baseQuantity", "expectedYieldPercent"].some(
       (key) => fieldText(first, key) !== "",
     );
-    const legacyFormat = !fieldText(first, "versionId") && !hasVersionMetadata && !fieldText(first, "versionStatus");
+    const legacyFormat =
+      !fieldText(first, "versionId") && !hasVersionMetadata && !fieldText(first, "versionStatus");
     if (statusValue !== "activa" && statusValue !== "active" && !legacyFormat) continue;
-    const finished = resolveProduct(state, fieldText(first, "productId"), fieldText(first, "productSku"));
-    activeGroupsByProduct.set(finished.id, [...(activeGroupsByProduct.get(finished.id) ?? []), group.map((item) => item.row)]);
+    const finished = resolveProduct(
+      state,
+      fieldText(first, "productId"),
+      fieldText(first, "productSku"),
+    );
+    activeGroupsByProduct.set(finished.id, [
+      ...(activeGroupsByProduct.get(finished.id) ?? []),
+      group.map((item) => item.row),
+    ]);
   }
   const productsWithConflictingActiveVersions = new Set(
-    [...activeGroupsByProduct].filter(([, versionGroups]) => versionGroups.length > 1).map(([productId]) => productId),
+    [...activeGroupsByProduct]
+      .filter(([, versionGroups]) => versionGroups.length > 1)
+      .map(([productId]) => productId),
   );
   for (const [productId, versionGroups] of activeGroupsByProduct) {
     if (!productsWithConflictingActiveVersions.has(productId)) continue;
     for (const rowsInGroup of versionGroups)
-      setRowsResult(results, rowsInGroup, "error", "El archivo declara más de una versión activa para el mismo producto.");
+      setRowsResult(
+        results,
+        rowsInGroup,
+        "error",
+        "El archivo declara más de una versión activa para el mismo producto.",
+      );
   }
 
   for (const group of grouped.values()) {
@@ -1782,59 +1879,110 @@ function importRecipes(
     const first = rowsInGroup[0];
     if (!first) continue;
     try {
-      const finished = resolveProduct(state, fieldText(first, "productId"), fieldText(first, "productSku"));
+      const finished = resolveProduct(
+        state,
+        fieldText(first, "productId"),
+        fieldText(first, "productSku"),
+      );
       if (productsWithConflictingActiveVersions.has(finished.id)) continue;
       const components = group.map((item) => item.component);
       const componentIds = components.map((component) => component.productId);
       if (new Set(componentIds).size !== componentIds.length)
         throw new Error("La versión contiene el mismo material más de una vez.");
       for (const { row } of group.slice(1)) {
-        for (const key of ["recipeId", "versionNumber", "versionStatus", "baseQuantity", "expectedYieldPercent"]) {
+        for (const key of [
+          "recipeId",
+          "versionNumber",
+          "versionStatus",
+          "baseQuantity",
+          "expectedYieldPercent",
+        ]) {
           const currentValue = row.values[key];
           const firstValue = first.values[key];
-          if (currentValue !== undefined && currentValue !== null && currentValue !== "" &&
-            firstValue !== undefined && firstValue !== null && firstValue !== "" &&
-            String(currentValue) !== String(firstValue)) {
-            throw new Error("Las filas de una misma versión deben conservar los mismos datos de cabecera.");
+          if (
+            currentValue !== undefined &&
+            currentValue !== null &&
+            currentValue !== "" &&
+            firstValue !== undefined &&
+            firstValue !== null &&
+            firstValue !== "" &&
+            String(currentValue) !== String(firstValue)
+          ) {
+            throw new Error(
+              "Las filas de una misma versión deben conservar los mismos datos de cabecera.",
+            );
           }
         }
       }
       for (const item of group) {
         const unit = fieldText(item.row, "unit");
         const material = state.products.find((product) => product.id === item.component.productId);
-        if (unit && material && unit.trim().toLocaleLowerCase("es-CO") !== material.unit.trim().toLocaleLowerCase("es-CO"))
-          throw new Error(`La unidad «${unit}» no coincide con la unidad de inventario «${material.unit}».`);
+        if (
+          unit &&
+          material &&
+          unit.trim().toLocaleLowerCase("es-CO") !== material.unit.trim().toLocaleLowerCase("es-CO")
+        )
+          throw new Error(
+            `La unidad «${unit}» no coincide con la unidad de inventario «${material.unit}».`,
+          );
       }
       const versionId = fieldText(first, "versionId") || `legacy-version-${finished.id}`;
       const recipeId = fieldText(first, "recipeId") || `imported-recipe-${finished.id}`;
       const idMatch = state.recipes.find((recipe) => recipe.id === recipeId);
       if (idMatch && idMatch.productId !== finished.id)
         throw new Error("El ID de receta ya pertenece a otro producto terminado.");
-      const existingRecipe = state.recipes.find((recipe) => recipe.productId === finished.id || recipe.id === recipeId);
-      if (existingRecipe?.versions.some((version) => version.id === versionId || version.versionNumber === (optionalNumber(first, "versionNumber") ?? 1))) {
-        setRowsResult(results, rowsInGroup, "duplicate", "La receta o versión ya existe; no se modificó.");
+      const existingRecipe = state.recipes.find(
+        (recipe) => recipe.productId === finished.id || recipe.id === recipeId,
+      );
+      if (
+        existingRecipe?.versions.some(
+          (version) =>
+            version.id === versionId ||
+            version.versionNumber === (optionalNumber(first, "versionNumber") ?? 1),
+        )
+      ) {
+        setRowsResult(
+          results,
+          rowsInGroup,
+          "duplicate",
+          "La receta o versión ya existe; no se modificó.",
+        );
         continue;
       }
-      const legacyFormat = !fieldText(first, "versionId") &&
+      const legacyFormat =
+        !fieldText(first, "versionId") &&
         optionalNumber(first, "versionNumber") === undefined &&
         optionalNumber(first, "baseQuantity") === undefined &&
         optionalNumber(first, "expectedYieldPercent") === undefined &&
         !fieldText(first, "versionStatus");
       const statusValue = normalized(fieldText(first, "versionStatus"));
-      const status: RecipeVersion["status"] = statusValue === "activa" || statusValue === "active"
-        ? "active"
-        : statusValue === "archivada" || statusValue === "archived"
-          ? "archived"
-          : statusValue === "borrador" || statusValue === "draft"
-            ? "draft"
-            : legacyFormat
-              ? "active"
-              : (() => { throw new Error(`Estado de versión «${fieldText(first, "versionStatus") }» no válido.`); })();
-      const versionNumber = optionalNumber(first, "versionNumber") ??
-        Math.max(0, ...(existingRecipe?.versions.map((version) => version.versionNumber) ?? [])) + 1;
+      const status: RecipeVersion["status"] =
+        statusValue === "activa" || statusValue === "active"
+          ? "active"
+          : statusValue === "archivada" || statusValue === "archived"
+            ? "archived"
+            : statusValue === "borrador" || statusValue === "draft"
+              ? "draft"
+              : legacyFormat
+                ? "active"
+                : (() => {
+                    throw new Error(
+                      `Estado de versión «${fieldText(first, "versionStatus")}» no válido.`,
+                    );
+                  })();
+      const versionNumber =
+        optionalNumber(first, "versionNumber") ??
+        Math.max(0, ...(existingRecipe?.versions.map((version) => version.versionNumber) ?? [])) +
+          1;
       const baseQuantity = optionalNumber(first, "baseQuantity") ?? 1;
       const expectedYieldPercent = optionalNumber(first, "expectedYieldPercent") ?? 100;
-      if (!Number.isInteger(versionNumber) || versionNumber < 1 || baseQuantity <= 0 || expectedYieldPercent <= 0 || expectedYieldPercent > 100)
+      if (
+        !Number.isInteger(versionNumber) ||
+        versionNumber < 1 ||
+        baseQuantity <= 0 ||
+        expectedYieldPercent <= 0 ||
+        expectedYieldPercent > 100
+      )
         throw new Error("Número de versión, lote base o rendimiento fuera de rango.");
       const createdAt = fieldDateTime(first, "createdAt");
       const version: RecipeVersion = {
@@ -1845,26 +1993,45 @@ function importRecipes(
         expectedYieldPercent,
         components,
         createdAt,
-        ...(status === "active" ? { activatedAt: fieldDateTime(first, "activatedAt") || createdAt } : {}),
+        ...(status === "active"
+          ? { activatedAt: fieldDateTime(first, "activatedAt") || createdAt }
+          : {}),
       };
       let recipe: Recipe;
       if (existingRecipe) {
         if (status === "active" && existingRecipe.activeVersionId) {
-          const current = existingRecipe.versions.find((item) => item.id === existingRecipe.activeVersionId);
+          const current = existingRecipe.versions.find(
+            (item) => item.id === existingRecipe.activeVersionId,
+          );
           if (current) current.status = "archived";
         }
         existingRecipe.versions.push(version);
         if (status === "active") existingRecipe.activeVersionId = version.id;
         recipe = existingRecipe;
       } else {
-        recipe = { id: recipeId, productId: finished.id, activeVersionId: status === "active" ? version.id : null, versions: [version] };
+        recipe = {
+          id: recipeId,
+          productId: finished.id,
+          activeVersionId: status === "active" ? version.id : null,
+          versions: [version],
+        };
         state.recipes.push(recipe);
       }
       for (const row of rowsInGroup) addExtras(state, row, "recipes", recipe.id);
-      setRowsResult(results, rowsInGroup, "ready", `Versión ${versionNumber} agregada con ${components.length} componentes.`);
+      setRowsResult(
+        results,
+        rowsInGroup,
+        "ready",
+        `Versión ${versionNumber} agregada con ${components.length} componentes.`,
+      );
     } catch (error) {
-      markError(results, first, error instanceof Error ? error.message : "Versión de receta no válida.");
-      for (const row of rowsInGroup.slice(1)) markError(results, row, "La versión agrupada contiene un componente no válido.");
+      markError(
+        results,
+        first,
+        error instanceof Error ? error.message : "Versión de receta no válida.",
+      );
+      for (const row of rowsInGroup.slice(1))
+        markError(results, row, "La versión agrupada contiene un componente no válido.");
     }
   }
 }
@@ -2620,10 +2787,13 @@ function importProductionOrders(
       if (order.quantity <= 0 || order.wasteQuantity < 0 || order.wasteQuantity > order.quantity)
         throw new Error("La cantidad producida o el desperdicio no son válidos.");
       if (
-        (order.recipeVersionNumber !== undefined && (!Number.isInteger(order.recipeVersionNumber) || order.recipeVersionNumber < 1)) ||
-        (order.expectedYieldPercent !== undefined && (order.expectedYieldPercent <= 0 || order.expectedYieldPercent > 100)) ||
+        (order.recipeVersionNumber !== undefined &&
+          (!Number.isInteger(order.recipeVersionNumber) || order.recipeVersionNumber < 1)) ||
+        (order.expectedYieldPercent !== undefined &&
+          (order.expectedYieldPercent <= 0 || order.expectedYieldPercent > 100)) ||
         (order.expectedGoodOutputQuantity !== undefined && order.expectedGoodOutputQuantity < 0)
-      ) throw new Error("La instantánea de receta de la orden contiene valores no válidos.");
+      )
+        throw new Error("La instantánea de receta de la orden contiene valores no válidos.");
       state.productionOrders.push(order);
       addExtras(state, row, "productionOrders", id);
       setRowsResult(results, [row], "ready", "Orden agregada sin crear movimientos de inventario.");
@@ -3026,6 +3196,7 @@ function importResourceReadings(
         quality,
         sourceLabel: fieldText(row, "sourceLabel") || "Importado desde Excel",
         capturedAt: fieldDateTime(row, "capturedAt"),
+        billedAmount: fieldNumber(row, "billedAmount", false, 0) || undefined,
         materialProductId,
         receiptImportId,
         externalReference: textOptional(row, "externalReference"),
@@ -3432,7 +3603,13 @@ function countStateRows(state: AppState): number {
       state.receiptImports,
       state.importExtras,
     ].reduce((sum, section) => sum + section.length, 0) +
-      state.recipes.reduce((sum, recipe) => sum + recipe.versions.length + recipe.versions.reduce((components, version) => components + version.components.length, 0), 0) +
+    state.recipes.reduce(
+      (sum, recipe) =>
+        sum +
+        recipe.versions.length +
+        recipe.versions.reduce((components, version) => components + version.components.length, 0),
+      0,
+    ) +
     state.productionOrders.reduce((sum, order) => sum + order.consumedMaterials.length, 0) +
     state.sales.reduce((sum, sale) => sum + sale.payments.length, 0) +
     state.purchases.reduce((sum, purchase) => sum + purchase.payments.length, 0) +

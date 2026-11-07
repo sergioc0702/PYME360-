@@ -243,6 +243,8 @@ def validate_business_records(records: dict[str, dict[str, dict]]) -> None:
 
     for reading in _records(records, "resourceReadings").values():
         quantity = _number(reading, "quantity", "Consumo ambiental", minimum=0)
+        if reading.get("billedAmount") is not None:
+            _number(reading, "billedAmount", "Valor pagado", minimum=0)
         if quantity >= 1e15 or not reading.get("unit"):
             raise BusinessValidationError("Una lectura ambiental requiere unidad y cantidad válida.")
         start = reading.get("periodStart")

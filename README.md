@@ -63,10 +63,15 @@ No subas a GitHub datos reales de clientes, proveedores, facturas o usuarios. Py
 - Captura mensual de energía, agua, combustibles, producción, residuos y material aprovechado.
 - Lectura local de recibos PDF/JPG/PNG, con extracción de período y consumo para revisar antes de guardar; también admite registro manual.
 - Recomendaciones ambientales e indicadores por unidad producida comparados con el historial de la empresa; si falta historial, el sistema indica que está creando una referencia propia.
+- Ahorro frente a un mes base en pesos, consumo y CO₂, ajustado por producción cuando hay unidades registradas. Usa el valor pagado de la lectura o del recibo.
+- Consumo por producto, repartido según las unidades terminadas en el mes. Es una aproximación.
+- Sugerencias basadas en los datos de la empresa, que se pueden agregar al plan de acciones.
+- Informe mensual en PDF. Orienta decisiones internas y no es un certificado oficial.
 - Referencias públicas para agua y energía desde la API ODS de ONU y la API de XM/Sinergox; comparaciones de intensidad propias solo cuando hay 12 meses completos, producción registrada y conversión de unidades configurada. DANE/SUI/EIA usan snapshots CSV revisados manualmente. Consulta límites y pruebas en [la guía de referencias ambientales](typescript-model/README.md).
 - Registro del origen del dato ambiental confirmado. El recibo original se descarta y no se conserva.
 - Contactos y conteos físicos de inventario.
 - Espacio **Datos y respaldo** para descargar un libro Excel por hojas, importar `.xlsx`/`.xls` (con plantilla en el asistente) y crear o restaurar un respaldo JSON completo.
+- Reconocimiento de archivos desordenados (.xlsx, .xls y .csv): propone la sección de cada hoja y columna por sus títulos y su contenido, crea clientes, proveedores y productos a partir de hojas mezcladas, y deja que el usuario corrija antes de guardar. Las ventas entran sin pagos y las compras con su saldo por revisar.
 - Importaciones locales con validación de referencias y conservación de columnas adicionales; los cambios se aplican a SQLite después de confirmar. El asistente es aditivo, omite duplicados, no importa usuarios ni contraseñas y no genera movimientos de inventario o caja a partir de operaciones comerciales importadas.
 - Configuración inicial de empresa y creación de productos, materias primas e insumos.
 - Tema Sistema, Claro u Oscuro, con preferencia guardada en el navegador.

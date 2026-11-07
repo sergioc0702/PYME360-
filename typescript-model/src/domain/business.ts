@@ -155,6 +155,7 @@ export function saveResourceReading(
     );
   }
   requireNonNegative(input.quantity, "La cantidad medida");
+  if (input.billedAmount !== undefined) requireNonNegative(input.billedAmount, "El valor pagado");
   requireText(input.unit, "La unidad");
   requireText(input.siteId, "La sede");
   const allowedActivities: Record<ResourceReading["resource"], ResourceReading["activity"][]> = {

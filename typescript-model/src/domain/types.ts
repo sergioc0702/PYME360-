@@ -418,6 +418,8 @@ export interface ResourceReading {
   quality: ReadingQuality;
   sourceLabel: string;
   capturedAt: string;
+  /** Valor pagado en pesos por esta lectura. */
+  billedAmount?: number;
   materialProductId?: string;
   receiptImportId?: string;
   externalReference?: string;

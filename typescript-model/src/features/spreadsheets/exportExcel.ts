@@ -1192,6 +1192,7 @@ export function buildExcelWorkbook(state: AppState): ExcelJS.Workbook {
       { header: "Sede", key: "siteId", width: 18 },
       { header: "Origen", key: "sourceLabel", width: 26 },
       { header: "Calidad", key: "quality", width: 16 },
+      { header: "Valor pagado", key: "billedAmount", width: 16 },
       { header: "Fuente técnica", key: "source", width: 18 },
       { header: "Capturada", key: "capturedAt", width: 24 },
       { header: "Factura/referencia", key: "externalReference", width: 24 },
@@ -1201,6 +1202,7 @@ export function buildExcelWorkbook(state: AppState): ExcelJS.Workbook {
     ],
     state.resourceReadings.map((reading) => ({
       ...reading,
+      billedAmount: reading.billedAmount ?? "",
       externalReference: reading.externalReference ?? "",
       materialProductId: reading.materialProductId ?? "",
       receiptImportId: reading.receiptImportId ?? "",

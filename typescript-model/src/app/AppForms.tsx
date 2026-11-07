@@ -1180,6 +1180,9 @@ export function ResourceReadingForm({
       activity: rawActivity,
       quantity: readNumber(form, "quantity"),
       unit: readString(form, "unit"),
+      billedAmount: readString(form, "billedAmount")
+        ? readNumber(form, "billedAmount")
+        : undefined,
       periodStart: readString(form, "periodStart"),
       periodEnd: readString(form, "periodEnd"),
       siteId: "site-main",
@@ -1239,6 +1242,16 @@ export function ResourceReadingForm({
             initialValue={reading?.resource === resource ? reading.unit : units[resource]}
             required
           />
+          {(resource === "electricity" || resource === "water") && (
+            <Field
+              label="Valor pagado en pesos (opcional)"
+              name="billedAmount"
+              type="number"
+              initialValue={reading?.billedAmount ?? ""}
+              min="0"
+              step="any"
+            />
+          )}
           <Field
             label="Desde"
             name="periodStart"
@@ -1642,9 +1655,11 @@ export function EmissionFactorForm({
 }
 
 export function EnvironmentalActionForm({
+  initial,
   onSave,
   onClose,
 }: {
+  initial?: { title: string; indicatorId: IndicatorId; notes: string };
   onSave: (input: EnvironmentalActionInput) => void;
   onClose: () => void;
 }) {
@@ -1663,11 +1678,16 @@ export function EnvironmentalActionForm({
     <Modal title="Nueva acción ambiental" onClose={onClose}>
       <form className="modal-body" onSubmit={submit}>
         <div className="form-grid">
-          <SelectField label="Indicador asociado" name="indicatorId" options={indicatorOptions} />
-          <Field label="Acción" name="title" required />
+          <SelectField
+            label="Indicador asociado"
+            name="indicatorId"
+            initialValue={initial?.indicatorId}
+            options={indicatorOptions}
+          />
+          <Field label="Acción" name="title" initialValue={initial?.title} required />
           <Field label="Responsable" name="owner" required />
           <Field label="Fecha límite" name="dueDate" type="date" required />
-          <Field label="Notas" name="notes" />
+          <Field label="Notas" name="notes" initialValue={initial?.notes} />
         </div>
         <ModalFooter onClose={onClose} submitLabel="Crear acción" />
       </form>

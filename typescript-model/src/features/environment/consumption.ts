@@ -64,7 +64,13 @@ export async function extractReceipt(
     onProgress?.(progress.label, progress.percent),
   );
   const text = result.textPreview || "";
-  const provider = /enel/i.test(text) ? "Enel Colombia" : "Proveedor no identificado";
+  const provider = /empoduitama/i.test(text)
+    ? "Empoduitama"
+    : /\bebsa\b|empresa de energ[ií]a de boyac[aá]/i.test(text)
+      ? "EBSA"
+      : /enel/i.test(text)
+        ? "Enel Colombia"
+        : "Proveedor no identificado";
   const invoiceNumber = (
     /(?:factura|número de factura|no\.?)\s*[:#-]?\s*([A-Z0-9-]{4,})/i.exec(text)?.[1] ?? ""
   ).trim();

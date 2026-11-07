@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import type { SavingsSuggestion } from "../../domain/insights";
+import { SavingsPanel } from "./SavingsPanel";
 import {
   loadEnvironmentalBenchmarks,
   refreshEnvironmentalBenchmarks,
@@ -48,6 +50,8 @@ interface EnvironmentPageProps {
   onEditFactor: (factor: EmissionFactor) => void;
   onDeleteFactor: (factorId: string) => void;
   onNewAction: () => void;
+  onAddSuggestion: (suggestion: SavingsSuggestion) => void;
+  onError: (message: string) => void;
   onToggleAction: (actionId: string) => void;
   onDeleteAction: (actionId: string) => void;
 }
@@ -1190,6 +1194,8 @@ export function EnvironmentPage({
   onEditFactor,
   onDeleteFactor,
   onNewAction,
+  onAddSuggestion,
+  onError,
   onToggleAction,
   onDeleteAction,
 }: EnvironmentPageProps) {
@@ -1398,6 +1404,13 @@ export function EnvironmentPage({
         dispositivo. Las referencias públicas se actualizan desde sus fuentes al solicitarlo; no
         representan telemetría ni el consumo real de esta planta.
       </div>
+
+      <SavingsPanel
+        state={state}
+        canEdit={canEdit}
+        onAddAction={onAddSuggestion}
+        onError={onError}
+      />
 
       <Panel
         title="Fuente de consumo"

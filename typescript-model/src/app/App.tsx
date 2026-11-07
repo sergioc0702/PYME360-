@@ -750,6 +750,17 @@ function Workspace({
             run(() => deleteEmissionFactor(state, factorId), "Factor eliminado.");
         }}
         onNewAction={() => setModal({ type: "environmental-action" })}
+        onAddSuggestion={(suggestion) =>
+          setModal({
+            type: "environmental-action",
+            initial: {
+              title: suggestion.title,
+              indicatorId: suggestion.indicatorId,
+              notes: suggestion.reason,
+            },
+          })
+        }
+        onError={(message) => notify(message, true)}
         onToggleAction={(actionId) =>
           run(
             () => completeEnvironmentalAction(state, actionId),
@@ -1493,6 +1504,7 @@ function Workspace({
       )}
       {modal?.type === "environmental-action" && (
         <EnvironmentalActionForm
+          initial={modal.initial}
           onClose={() => setModal(null)}
           onSave={(input) =>
             run(() => addEnvironmentalAction(state, input), "Acción ambiental registrada.")

@@ -36,6 +36,7 @@ import type {
   Sale,
   ResourceReading,
   EmissionFactor,
+  IndicatorId,
   IndicatorTarget,
   InventoryMovement,
 } from "../domain/types";
@@ -105,7 +106,10 @@ export type ModalState =
   | { type: "reading"; reading?: ResourceReading }
   | { type: "target"; target?: IndicatorTarget }
   | { type: "factor"; factor?: EmissionFactor }
-  | { type: "environmental-action" }
+  | {
+      type: "environmental-action";
+      initial?: { title: string; indicatorId: IndicatorId; notes: string };
+    }
   | { type: "payment"; sale: Sale }
   | { type: "purchase-payment"; purchase: Purchase }
   | { type: "review-payable"; purchase: Purchase }
@@ -3169,7 +3173,7 @@ export function DataPage({
                 type="button"
                 onClick={() => setImportOpen(true)}
               >
-                Importar archivo Excel (.xlsx o .xls)
+                Importar archivo (.xlsx, .xls o .csv)
               </button>
             ) : (
               <span className="field-hint">

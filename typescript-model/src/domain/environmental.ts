@@ -102,6 +102,7 @@ export const INDICATOR_CATALOG: IndicatorDefinition[] = [
 
 export interface MonthlyEnvironmentalMetrics {
   period: string;
+  productionUnits: number | null;
   electricityKwh: number | null;
   energyPerUnit: number | null;
   waterWithdrawalM3: number | null;
@@ -247,15 +248,18 @@ function factorFor(
     (factor) =>
       factor.scope === scope &&
       factor.activity === activity &&
-      factor.year === year &&
+      factor.year <= year &&
       (factor.geography === geography ||
         factor.geography === "Colombia" ||
         factor.geography === "Global") &&
       convertUnit(1, unit, factor.activityUnit) !== null,
   );
   if (!candidates.length) return null;
+  // Los factores oficiales se publican con rezago: se usa el más reciente hasta ese año.
   const exact = candidates.filter((factor) => factor.geography === geography);
-  const preferred = exact.length ? exact : candidates;
+  const scoped = exact.length ? exact : candidates;
+  const latestYear = Math.max(...scoped.map((factor) => factor.year));
+  const preferred = scoped.filter((factor) => factor.year === latestYear);
   return preferred.length === 1 ? preferred[0] : null;
 }
 
@@ -531,6 +535,7 @@ export function calculateMonthlyEnvironmentalMetrics(
         .at(-1) ?? null;
     return {
       period,
+      productionUnits: units,
       electricityKwh,
       energyPerUnit: electricityKwh !== null && units ? electricityKwh / units : null,
       waterWithdrawalM3: withdrawal,
