@@ -1,5 +1,13 @@
 import { useState, type FormEvent } from "react";
-import { currentMonth, formatMoney, formatNumber, readNumber, readString, today } from "./AppViews";
+import {
+  currentMonth,
+  formatMoney,
+  formatNumber,
+  formatQuantity,
+  readNumber,
+  readString,
+  today,
+} from "./AppViews";
 import { Field, Modal, SelectField } from "./AppViews";
 import { calculateRecipeRequirements, estimateMaterialCost } from "../domain/costing";
 import type {
@@ -314,7 +322,7 @@ export function ProductForm({
             <div className="field">
               <span>Existencia actual</span>
               <strong>
-                {formatNumber(product.stock)} {product.unit}
+                {formatQuantity(product.stock, product.unit)}
               </strong>
               <span className="field-hint">
                 Para conciliarla, registra un conteo físico y el motivo. La diferencia quedará en el historial de movimientos.
@@ -667,7 +675,7 @@ export function SaleForm({
                       <option value="">Selecciona un producto</option>
                       {products.map((product) => (
                         <option key={product.id} value={product.id}>
-                          {product.name} ({formatNumber(product.stock)} {product.unit})
+                          {product.name} ({formatQuantity(product.stock, product.unit)})
                         </option>
                       ))}
                     </select>
@@ -914,7 +922,7 @@ export function PurchaseForm({
                     <option value="">Selecciona un material</option>
                     {materials.map((product) => (
                       <option key={product.id} value={product.id}>
-                        {product.name} · {product.sku} ({formatNumber(product.stock)} {product.unit}
+                        {product.name} · {product.sku} ({formatQuantity(product.stock, product.unit)}
                         )
                       </option>
                     ))}
@@ -1066,7 +1074,7 @@ export function ProductionForm({
         {activeVersion && (
           <div className="panel-body">
             <p className="field-hint">
-              Fórmula v{activeVersion.versionNumber}: lote base {formatNumber(activeVersion.baseQuantity)} {selectedProduct?.unit} · rendimiento esperado {formatNumber(activeVersion.expectedYieldPercent)} %.
+              Fórmula v{activeVersion.versionNumber}: lote base {formatQuantity(activeVersion.baseQuantity, selectedProduct?.unit)} · rendimiento esperado {formatNumber(activeVersion.expectedYieldPercent)} %.
             </p>
             <div className="table-wrap">
               <table>
@@ -1081,9 +1089,9 @@ export function ProductionForm({
                     return (
                       <tr key={requirement.productId}>
                         <td>{material.name}</td>
-                        <td>{formatNumber(requirement.quantity)} {material.unit}</td>
-                        <td>{formatNumber(material.stock)} {material.unit}</td>
-                        <td>{shortfall > 0 ? `Faltan ${formatNumber(shortfall)} ${material.unit}` : "Disponible"}</td>
+                        <td>{formatQuantity(requirement.quantity, material.unit)}</td>
+                        <td>{formatQuantity(material.stock, material.unit)}</td>
+                        <td>{shortfall > 0 ? `Faltan ${formatQuantity(shortfall, material.unit)}` : "Disponible"}</td>
                       </tr>
                     );
                   })}
@@ -1094,7 +1102,7 @@ export function ProductionForm({
         )}
         <div className="notice production-cost-preview" aria-live="polite">
           <strong>Salida buena esperada</strong>
-          <span>{activeVersion ? `${formatNumber(expectedGoodOutput)} ${selectedProduct?.unit}` : "Sin receta activa"}</span>
+          <span>{activeVersion ? `${formatQuantity(expectedGoodOutput, selectedProduct?.unit)}` : "Sin receta activa"}</span>
         </div>
         <div className="notice production-cost-preview" aria-live="polite">
           <strong>Estimado directo de materiales</strong>
@@ -1115,7 +1123,7 @@ export function ProductionForm({
         </div>
         {shortageLines.length > 0 && (
           <div className="notice" role="alert">
-            No se puede crear la orden: falta {shortageLines.map((line) => `${line.material.name} (${formatNumber(line.shortfall)} ${line.material.unit})`).join(", ")}.
+            No se puede crear la orden: falta {shortageLines.map((line) => `${line.material.name} (${formatQuantity(line.shortfall, line.material.unit)})`).join(", ")}.
           </div>
         )}
         <ModalFooter onClose={onClose} submitLabel="Crear orden" disabled={!activeVersion || shortageLines.length > 0 || quantity <= 0} />
@@ -1207,7 +1215,7 @@ export function ResourceReadingForm({
             ]}
           />
           <SelectField
-            key={resource}
+            key={`activity-${resource}`}
             label="Actividad"
             name="activity"
             initialValue={
@@ -1225,7 +1233,7 @@ export function ResourceReadingForm({
             required
           />
           <Field
-            key={resource}
+            key={`unit-${resource}`}
             label="Unidad"
             name="unit"
             initialValue={reading?.resource === resource ? reading.unit : units[resource]}
@@ -2117,7 +2125,7 @@ export function StockForm({
         <div className="notice">
           Saldo en sistema:{" "}
           <strong>
-            {formatNumber(product.stock)} {product.unit}
+            {formatQuantity(product.stock, product.unit)}
           </strong>
           . Registra la cantidad que encontraste físicamente.
         </div>

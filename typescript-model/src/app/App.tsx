@@ -26,7 +26,9 @@ import {
   createPurchase,
   createSale,
   deletePurchase,
+  deleteElectronicDraft,
   deleteSale,
+  financialAccountBalance,
   saveCompany,
   saveRecipeVersion,
   saveEnvironmentalConfig,
@@ -61,6 +63,7 @@ import {
   THEME_STORAGE_KEY,
   applyTheme,
   errorMessage,
+  formatMoney,
   getInitialTheme,
   OverviewPage,
   ContactsPage,
@@ -108,6 +111,8 @@ import {
   LegacyPayableReviewForm,
 } from "./AppForms";
 
+const NAV_COLLAPSED_STORAGE_KEY = "pyme360.nav-collapsed";
+
 function Workspace({
   user,
   onLogout,
@@ -142,10 +147,13 @@ function Workspace({
   const [selectedRecipeProductId, setSelectedRecipeProductId] = useState<string>();
   const [expandedNavGroups, setExpandedNavGroups] = useState<Set<string>>(() => new Set());
   const [salesSection, setSalesSection] = useState<"sales" | "documents">("sales");
-  const navCollapsed = true;
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => window.localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY) !== "false",
+  );
   const [isMobileViewport, setIsMobileViewport] = useState(
     () => typeof window !== "undefined" && window.matchMedia?.("(max-width: 760px)").matches === true,
   );
+  const navCollapsed = sidebarCollapsed || isMobileViewport;
   const [sidebarTooltip, setSidebarTooltip] = useState<{
     label: string;
     top: number;
@@ -157,14 +165,32 @@ function Workspace({
   const profileTriggerRef = useRef<HTMLButtonElement | null>(null);
   const profilePanelRef = useRef<HTMLElement | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
   const [toast, setToast] = useState<{ message: string; error: boolean }>({
     message: "",
     error: false,
   });
 
   function notify(message: string, error = false) {
+    if (toastTimer.current !== undefined) window.clearTimeout(toastTimer.current);
     setToast({ message, error });
-    window.setTimeout(() => setToast({ message: "", error: false }), 4200);
+    toastTimer.current = window.setTimeout(
+      () => setToast({ message: "", error: false }),
+      error ? 7000 : 4200,
+    );
+  }
+
+  function toggleSidebar() {
+    const collapsed = !sidebarCollapsed;
+    window.localStorage.setItem(NAV_COLLAPSED_STORAGE_KEY, String(collapsed));
+    setSidebarCollapsed(collapsed);
+    setSidebarTooltip(null);
+    if (!collapsed) {
+      const activeGroup = NAV_GROUPS.find(
+        (group) => group.pages.length > 1 && group.pages.includes(page),
+      );
+      setExpandedNavGroups(activeGroup ? new Set([activeGroup.title]) : new Set());
+    }
   }
 
   function showSidebarTooltip(target: HTMLElement, label: string) {
@@ -318,6 +344,16 @@ function Workspace({
     } catch (error) {
       notify(errorMessage(error), true);
     }
+  }
+
+  function confirmCashBalance(accountId: string | undefined, amount: number): boolean {
+    const account = state.financialAccounts.find((item) => item.id === accountId);
+    if (!account) return true;
+    const result = financialAccountBalance(state, account) - amount;
+    return (
+      result >= 0 ||
+      window.confirm(`Esta operación dejará ${account.name} en ${formatMoney(result)}. ¿Continuar?`)
+    );
   }
 
   function removeContact(contact: Contact) {
@@ -517,6 +553,8 @@ function Workspace({
           navigateToPage("production");
           setProductionSection("recipes");
           setSelectedRecipeProductId(productId);
+          if (canEdit && !state.recipes.some((recipe) => recipe.productId === productId))
+            setModal({ type: "recipe", productId });
         }}
         onDelete={removeProduct}
         canEdit={canEdit}
@@ -583,6 +621,17 @@ function Workspace({
               canEdit={canEdit}
               isAdmin={isAdmin}
               onRefreshState={refreshPersistedState}
+              onDeleteDraft={(document) => {
+                if (
+                  window.confirm(
+                    "¿Eliminar este borrador? Nunca se envió al proveedor y la venta se conserva.",
+                  )
+                )
+                  run(
+                    () => deleteElectronicDraft(state, document.id),
+                    "Borrador electrónico eliminado.",
+                  );
+              }}
               onSaveTaxConfiguration={async (config: TaxConfiguration) => {
                 try {
                   return await commit(
@@ -991,6 +1040,22 @@ function Workspace({
           })}
         </nav>
         <div className="workspace-sidebar-footer">
+          <button
+            className="workspace-sidebar-toggle"
+            type="button"
+            aria-label={sidebarCollapsed ? "Expandir menú" : "Contraer menú"}
+            aria-expanded={!sidebarCollapsed}
+            onMouseEnter={(event) =>
+              showSidebarTooltip(event.currentTarget, sidebarCollapsed ? "Expandir menú" : "Contraer menú")
+            }
+            onMouseLeave={() => setSidebarTooltip(null)}
+            onClick={toggleSidebar}
+          >
+            <svg aria-hidden="true" viewBox="0 0 20 20">
+              <path d={sidebarCollapsed ? "m7.5 5 5 5-5 5" : "m12.5 5-5 5 5 5"} />
+            </svg>
+            <span>Contraer menú</span>
+          </button>
           <button
             ref={profileTriggerRef}
             className="workspace-sidebar-user"
@@ -1458,12 +1523,13 @@ function Workspace({
               modal.purchase.payments.reduce((sum, payment) => sum + payment.amount, 0),
           )}
           onClose={() => setModal(null)}
-          onSave={(amount, date, method, accountId) =>
+          onSave={(amount, date, method, accountId) => {
+            if (!confirmCashBalance(accountId, amount)) return;
             run(
               () => addPurchasePayment(state, modal.purchase.id, amount, date, method, accountId),
               "Pago de compra registrado.",
-            )
-          }
+            );
+          }}
         />
       )}
       {modal?.type === "review-payable" && isAdmin && (
@@ -1494,6 +1560,7 @@ function Workspace({
           accounts={state.financialAccounts}
           onClose={() => setModal(null)}
           onSave={(input) =>
+            (input.direction !== "out" || confirmCashBalance(input.accountId, input.amount)) &&
             run(() => addManualCashMovement(state, input), "Movimiento de dinero registrado.")
           }
         />

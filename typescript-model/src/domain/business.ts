@@ -2,9 +2,6 @@ import type {
   AppState,
   Company,
   Contact,
-  ContactRole,
-  EnvironmentalRecord,
-  EnvironmentalRecordInput,
   ResourceReading,
   ResourceReadingInput,
   EmissionFactor,
@@ -15,10 +12,8 @@ import type {
   ElectronicDocument,
   ElectronicDocumentSnapshot,
   InvoiceDocumentKind,
-  InvoiceFollowUpStatus,
   Payment,
   Product,
-  ProductType,
   Recipe,
   RecipeComponent,
   RecipeVersion,
@@ -403,6 +398,15 @@ function requirePositive(value: number, label: string): void {
   if (!Number.isFinite(value) || value <= 0) {
     throw new BusinessError(`${label} debe ser mayor que cero.`);
   }
+}
+
+/** Parte del mayor código usado: contar registros repetía números después de eliminar uno. */
+function nextCode(prefix: string, codes: string[]): string {
+  const highest = codes.reduce((maximum, code) => {
+    const sequence = code.startsWith(prefix) ? Number(code.slice(prefix.length)) : 0;
+    return Number.isSafeInteger(sequence) ? Math.max(maximum, sequence) : maximum;
+  }, codes.length);
+  return `${prefix}${String(highest + 1).padStart(4, "0")}`;
 }
 
 function requireNonNegative(value: number, label: string): void {
@@ -823,6 +827,29 @@ export function prepareElectronicInvoice(
   return next;
 }
 
+export function isUnsentElectronicDraft(document: AppState["electronicDocuments"][number]): boolean {
+  return (
+    document.status === "draft" &&
+    document.attempts.length === 0 &&
+    !document.documentNumber &&
+    !document.providerReference &&
+    !document.cufe
+  );
+}
+
+/** Solo retira borradores que nunca llegaron al proveedor; lo enviado se conserva. */
+export function deleteElectronicDraft(state: AppState, documentId: string): AppState {
+  const document = state.electronicDocuments.find((item) => item.id === documentId);
+  if (!document) throw new BusinessError("No encontramos el borrador electrónico.");
+  if (!isUnsentElectronicDraft(document))
+    throw new BusinessError(
+      "Solo se puede eliminar un borrador que nunca se haya enviado al proveedor.",
+    );
+  const next = cloneState(state);
+  next.electronicDocuments = next.electronicDocuments.filter((item) => item.id !== documentId);
+  return next;
+}
+
 export function prepareElectronicAdjustmentNote(
   state: AppState,
   originalDocumentId: string,
@@ -986,6 +1013,39 @@ export function addSupplierInvoiceDocument(
   return next;
 }
 
+function identificationKey(taxId: string): string {
+  return taxId.replace(/[^0-9a-z]/gi, "").toLowerCase();
+}
+
+/** Valida solo lo que cambió, para que un dato antiguo no impida editar el resto del contacto. */
+function validateContactFields(
+  contacts: Contact[],
+  input: Pick<Contact, "taxId" | "phone" | "identificationType">,
+  previous?: Contact,
+): void {
+  const taxId = input.taxId.trim();
+  const phone = input.phone.trim();
+  if (phone && phone !== previous?.phone) {
+    if (!/^\+?[0-9 ()-]+$/.test(phone) || phone.replace(/\D/g, "").length < 7)
+      throw new BusinessError("Escribe un teléfono válido, con al menos 7 dígitos.");
+  }
+  if (!taxId || taxId === previous?.taxId) return;
+  const numericType = input.identificationType === "NIT" || input.identificationType === "CC";
+  const looksNumeric = /^[0-9. -]+$/.test(taxId);
+  if (numericType && !looksNumeric)
+    throw new BusinessError("El NIT o la cédula solo pueden tener números, puntos y guiones.");
+  if ((numericType || !input.identificationType) && looksNumeric) {
+    if (taxId.replace(/\D/g, "").length < 6)
+      throw new BusinessError("El NIT o la cédula deben tener al menos 6 dígitos.");
+  }
+  const duplicate = contacts.find(
+    (contact) =>
+      contact.id !== previous?.id && identificationKey(contact.taxId) === identificationKey(taxId),
+  );
+  if (duplicate)
+    throw new BusinessError(`Ya existe un contacto con esa identificación: ${duplicate.name}.`);
+}
+
 export function addContact(
   state: AppState,
   input: Omit<Contact, "id" | "name"> & { name: string },
@@ -999,6 +1059,7 @@ export function addContact(
   if (ordinaryCustomer && next.contacts.some((contact) => contact.ordinaryCustomer)) {
     throw new BusinessError("Ya existe un cliente de mostrador.");
   }
+  validateContactFields(next.contacts, input);
 
   next.contacts.unshift({
     id: createId("contact"),
@@ -1032,6 +1093,7 @@ export function updateContact(
   ) {
     throw new BusinessError("Ya existe un cliente de mostrador.");
   }
+  validateContactFields(next.contacts, input, next.contacts[index]);
   next.contacts[index] = {
     ...input,
     id: contactId,
@@ -1091,7 +1153,7 @@ export function addProduct(state: AppState, input: Omit<Product, "id" | "sku">):
     throw new BusinessError("La tarifa de IVA debe estar entre 0 y 100 %.");
   }
 
-  const sku = `P-${String(next.products.length + 1).padStart(4, "0")}`;
+  const sku = nextCode("P-", next.products.map((product) => product.sku));
   next.products.unshift({
     ...input,
     taxCategory: input.taxCategory ?? "unclassified",
@@ -1463,7 +1525,7 @@ export function createSale(state: AppState, input: SaleInput): AppState {
       : [];
   const sale: Sale = {
     id: saleId,
-    number: `V-${String(next.sales.length + 1).padStart(4, "0")}`,
+    number: nextCode("V-", next.sales.map((sale) => sale.number)),
     date: input.date,
     customerId: customer.id,
     customerName: customer.name,
@@ -1613,7 +1675,7 @@ export function deleteSale(state: AppState, saleId: string): AppState {
   if (index < 0) throw new BusinessError("No encontramos la venta.");
   if (next.electronicDocuments.some((document) => document.saleId === saleId))
     throw new BusinessError(
-      "No puedes eliminar una venta con borradores o documentos electrónicos; conserva el historial tributario.",
+      "Esta venta tiene un documento electrónico. Si es un borrador sin enviar, elimínalo primero en Facturación y documentos; los documentos enviados se conservan como historial.",
     );
   const sale = next.sales[index];
   const hasLedgerMovements = next.inventoryMovements.some(
@@ -1643,7 +1705,7 @@ function buildPurchaseLines(state: AppState, input: PurchaseInput): PurchaseLine
     requireNonNegative(line.lineTotal, "El costo del renglón");
     const product = getProduct(state, line.productId);
     if (product.type === "finished") {
-      throw new BusinessError("Las compras de este modelo deben ser materias primas o insumos.");
+      throw new BusinessError("Las compras deben ser materias primas o insumos.");
     }
     return {
       productId: product.id,
@@ -1658,6 +1720,20 @@ function buildPurchaseLines(state: AppState, input: PurchaseInput): PurchaseLine
   });
 }
 
+/** Promedio ponderado: un costo en cero se trata como desconocido y no diluye la entrada. */
+function blendUnitCost(product: Product, quantity: number, totalCost: number): void {
+  const knownStock = product.unitCost > 0 ? Math.max(product.stock, 0) : 0;
+  const denominator = knownStock + quantity;
+  if (denominator <= 0) return;
+  product.unitCost = roundCop((knownStock * product.unitCost + totalCost) / denominator);
+}
+
+function removeFromUnitCost(product: Product, quantity: number, totalCost: number): void {
+  const remaining = product.stock - quantity;
+  const remainingValue = product.stock * product.unitCost - totalCost;
+  if (remaining > 0 && remainingValue > 0) product.unitCost = roundCop(remainingValue / remaining);
+}
+
 function applyPurchaseChanges(
   state: AppState,
   previous: Purchase | null,
@@ -1667,6 +1743,16 @@ function applyPurchaseChanges(
   occurredAt: string,
 ): void {
   if (previous?.status === "received") {
+    const reversed = new Map<string, { quantity: number; totalCost: number }>();
+    for (const line of previous.lines) {
+      const entry = reversed.get(line.productId) ?? { quantity: 0, totalCost: 0 };
+      reversed.set(line.productId, {
+        quantity: entry.quantity + line.quantity,
+        totalCost: entry.totalCost + line.lineTotal,
+      });
+    }
+    for (const [productId, entry] of reversed)
+      removeFromUnitCost(getProduct(state, productId), entry.quantity, entry.totalCost);
     const hasLedgerMovements = state.inventoryMovements.some(
       (movement) => movement.sourceType === "purchase" && movement.sourceId === purchaseId,
     );
@@ -1692,6 +1778,7 @@ function applyPurchaseChanges(
   }
   if (updatedStatus === "received") {
     for (const line of updatedLines) {
+      blendUnitCost(getProduct(state, line.productId), line.quantity, line.lineTotal);
       addStock(state, line.productId, line.quantity, {
         movementType: "purchase",
         reason: "Entrada por compra recibida",
@@ -1714,7 +1801,7 @@ export function createPurchase(state: AppState, input: PurchaseInput): AppState 
   const total = lines.reduce((sum, line) => sum + line.lineTotal, 0);
   next.purchases.unshift({
     id: purchaseId,
-    number: `C-${String(next.purchases.length + 1).padStart(4, "0")}`,
+    number: nextCode("C-", next.purchases.map((purchase) => purchase.number)),
     date: input.date,
     supplierId: supplier.id,
     supplierName: supplier.name,
@@ -1849,7 +1936,7 @@ export function createProductionOrder(
 
   next.productionOrders.unshift({
     id: orderId,
-    number: `OP-${String(next.productionOrders.length + 1).padStart(4, "0")}`,
+    number: nextCode("OP-", next.productionOrders.map((order) => order.number)),
     date,
     productId: product.id,
     productName: product.name,
@@ -1886,6 +1973,8 @@ export function completeProductionOrder(
   if (wasteQuantity > order.quantity)
     throw new BusinessError("El desperdicio no puede superar las unidades procesadas.");
   const product = getProduct(next, order.productId);
+  if (order.estimatedMaterialCost != null && order.quantity > wasteQuantity)
+    blendUnitCost(product, order.quantity - wasteQuantity, order.estimatedMaterialCost);
   addStock(next, product.id, order.quantity - wasteQuantity, {
     movementType: "production_output",
     reason: "Entrada de producto terminado",
@@ -1934,62 +2023,4 @@ export function cancelProductionOrder(state: AppState, orderId: string): AppStat
   }
   order.status = "cancelled";
   return next;
-}
-
-export function saveEnvironmentalRecord(
-  state: AppState,
-  input: EnvironmentalRecordInput,
-): AppState {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.period)) {
-    throw new BusinessError("El período debe tener el formato AAAA-MM.");
-  }
-  for (const [label, value] of [
-    ["El consumo de energía", input.electricityKwh],
-    ["El consumo de agua", input.waterM3],
-    ["El consumo de combustible", input.fuelLiters],
-    ["La producción", input.productionUnits],
-    ["Los residuos", input.wasteKg],
-    ["El material aprovechado", input.recoveredKg],
-  ] as const)
-    requireNonNegative(value, label);
-
-  const next = cloneState(state);
-  const existing = next.environmentalRecords.find((record) => record.period === input.period);
-  const record: EnvironmentalRecord = {
-    id: existing?.id ?? createId("environment"),
-    ...input,
-    source: input.source ?? existing?.source ?? "manual",
-    sourceLabel: input.sourceLabel ?? existing?.sourceLabel ?? "Registro manual",
-    receiptImportId: input.receiptImportId ?? existing?.receiptImportId,
-    lastUpdatedAt: new Date().toISOString(),
-  };
-  if (existing) {
-    next.environmentalRecords[next.environmentalRecords.indexOf(existing)] = record;
-  } else {
-    next.environmentalRecords.push(record);
-  }
-  next.environmentalRecords.sort((a, b) => a.period.localeCompare(b.period));
-  return next;
-}
-
-export function deleteEnvironmentalRecord(state: AppState, recordId: string): AppState {
-  const next = cloneState(state);
-  const index = next.environmentalRecords.findIndex((record) => record.id === recordId);
-  if (index < 0) throw new BusinessError("No encontramos el registro ambiental.");
-  next.environmentalRecords.splice(index, 1);
-  return next;
-}
-
-export function isContactRole(role: string): role is ContactRole {
-  return role === "customer" || role === "supplier" || role === "both";
-}
-
-export function isProductType(type: string): type is ProductType {
-  return type === "raw_material" || type === "supply" || type === "finished";
-}
-
-export function isInvoiceStatus(status: string): status is InvoiceFollowUpStatus {
-  return (
-    status === "to_review" || status === "registered_externally" || status === "not_applicable"
-  );
 }

@@ -52,8 +52,19 @@ from sync_local import (
 
 MIN_PYTHON = (3, 11)
 MAX_BODY_BYTES = 20 * 1024 * 1024
+# Todo se sirve desde este equipo. wasm-unsafe-eval y blob: los necesita el OCR local;
+# unsafe-inline de estilos, los atributos style de React.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; "
+    "connect-src 'self' data: blob:; object-src 'none'; base-uri 'self'; form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+LOGIN_MAX_FAILURES = 5
+LOGIN_LOCK_SECONDS = 60
+login_failures: dict[str, tuple[int, float]] = {}
+login_failures_lock = threading.Lock()
 APP_NAME = "Pyme360"
-SCHEMA_VERSION = 1
 TYPESCRIPT_MODEL_SCHEMA_VERSION = 7
 PASSWORD_ITERATIONS = 600_000
 SESSION_TTL_SECONDS = 12 * 60 * 60
@@ -61,7 +72,6 @@ PORTS = range(8765, 8791)
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)
 ).resolve()
-WEB_ROOT = PROJECT_ROOT / "web"
 TYPESCRIPT_MODEL_ROOT = PROJECT_ROOT / "typescript-model" / "dist"
 benchmark_cache: dict | None = None
 benchmark_cached_at = 0.0
@@ -120,15 +130,6 @@ def initialize_database() -> None:
         )
     with db_session() as connection:
         connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute(
-            """CREATE TABLE IF NOT EXISTS app_state (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                schema_version INTEGER NOT NULL,
-                revision INTEGER NOT NULL,
-                payload_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )"""
-        )
         connection.execute(
             """CREATE TABLE IF NOT EXISTS typescript_model_state (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -191,7 +192,7 @@ def create_daily_backup(force: bool = False) -> None:
     target = BACKUP_DIR / f"pyme360-{today}.sqlite3"
     with db_session() as connection:
         has_data = connection.execute(
-            "SELECT 1 FROM app_state WHERE id = 1 UNION ALL SELECT 1 FROM typescript_model_state WHERE id = 1"
+            "SELECT 1 FROM typescript_model_state WHERE id = 1"
         ).fetchone() is not None
     if has_data and (force or not target.exists()):
         source = connect_db()
@@ -236,21 +237,6 @@ def create_pre_cloud_backup() -> Path | None:
     if os.name != "nt":
         target.chmod(0o600)
     return target
-
-
-def state_row() -> dict:
-    with db_session() as connection:
-        row = connection.execute(
-            "SELECT schema_version, revision, payload_json, updated_at FROM app_state WHERE id = 1"
-        ).fetchone()
-    if row is None:
-        return {"revision": 0, "state": None, "schemaVersion": SCHEMA_VERSION}
-    return {
-        "revision": row["revision"],
-        "state": json.loads(row["payload_json"]),
-        "schemaVersion": row["schema_version"],
-        "updatedAt": row["updated_at"],
-    }
 
 
 def typescript_model_state_row() -> dict:
@@ -658,14 +644,108 @@ def operator_change_error(previous: dict, updated: dict) -> str | None:
     return None
 
 
+NON_NEGATIVE_FIELDS = {
+    "products": ("stock", "minimumStock", "unitCost", "unitPrice", "vatRate"),
+    "sales": ("discount", "total"),
+    "purchases": ("total",),
+    "cashMovements": ("amount",),
+}
+NON_NEGATIVE_LINE_FIELDS = {
+    "sales": ("quantity", "unitPrice"),
+    "purchases": ("quantity", "lineTotal"),
+}
+
+
+def invalid_amount(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return True
+    return not math.isfinite(value) or value < 0
+
+
+def business_value_error(previous: dict, updated: dict) -> str | None:
+    """Reject negative amounts in new or edited rows; stored rows are left alone."""
+    for section, fields in NON_NEGATIVE_FIELDS.items():
+        before_rows = previous.get(section, [])
+        after_rows = updated.get(section, [])
+        if not isinstance(before_rows, list) or not isinstance(after_rows, list):
+            continue
+        before_by_id = {str(row.get("id")): row for row in before_rows if isinstance(row, dict)}
+        for row in after_rows:
+            if not isinstance(row, dict) or before_by_id.get(str(row.get("id"))) == row:
+                continue
+            lines = row.get("lines") if isinstance(row.get("lines"), list) else []
+            line_fields = NON_NEGATIVE_LINE_FIELDS.get(section, ())
+            if (
+                any(invalid_amount(row.get(field)) for field in fields)
+                or any(
+                    isinstance(line, dict) and invalid_amount(line.get(field))
+                    for line in lines
+                    for field in line_fields
+                )
+            ):
+                return f"Hay un valor negativo o no numérico en {section}; corrígelo antes de guardar."
+    return None
+
+
+def login_lock_remaining(username: str) -> int:
+    with login_failures_lock:
+        _, locked_until = login_failures.get(username.casefold(), (0, 0.0))
+    return max(0, math.ceil(locked_until - time.monotonic()))
+
+
+def record_login_failure(username: str) -> None:
+    key = username.casefold()
+    with login_failures_lock:
+        if len(login_failures) >= 1000 and key not in login_failures:
+            login_failures.clear()
+        count, locked_until = login_failures.get(key, (0, 0.0))
+        if locked_until and locked_until <= time.monotonic():
+            count = 0
+        count += 1
+        login_failures[key] = (
+            (0, time.monotonic() + LOGIN_LOCK_SECONDS) if count >= LOGIN_MAX_FAILURES else (count, 0.0)
+        )
+
+
+def clear_login_failures(username: str) -> None:
+    with login_failures_lock:
+        login_failures.pop(username.casefold(), None)
+
+
+def is_unsent_draft(document: object) -> bool:
+    """Only a draft that never reached a provider may leave the document history."""
+    return (
+        isinstance(document, dict)
+        and document.get("status") == "draft"
+        and not document.get("attempts")
+        and not document.get("documentNumber")
+        and not document.get("providerReference")
+        and not document.get("cufe")
+    )
+
+
+def removed_electronic_documents(previous: dict, updated: dict) -> list:
+    before_rows = previous.get("electronicDocuments", [])
+    after_rows = updated.get("electronicDocuments", [])
+    if not isinstance(before_rows, list) or not isinstance(after_rows, list):
+        return []
+    after_ids = {str(row.get("id")) for row in after_rows if isinstance(row, dict)}
+    return [row for row in before_rows if isinstance(row, dict) and str(row.get("id")) not in after_ids]
+
+
 def ledger_change_error(previous: dict, updated: dict) -> str | None:
     """Protect append-only books and require stock changes to match their ledger."""
     previous_electronic_documents = previous.get("electronicDocuments", [])
     updated_electronic_documents = updated.get("electronicDocuments", [])
     if not isinstance(previous_electronic_documents, list) or not isinstance(updated_electronic_documents, list):
         return "La sección electronicDocuments debe conservar el formato de lista."
-    if len(updated_electronic_documents) >= len(previous_electronic_documents):
-        for document in updated_electronic_documents[len(previous_electronic_documents):]:
+    known_document_ids = {
+        str(document.get("id")) for document in previous_electronic_documents if isinstance(document, dict)
+    }
+    for document in updated_electronic_documents:
+        if isinstance(document, dict) and str(document.get("id")) not in known_document_ids:
             if document.get("status") != "draft":
                 return "El estado de aceptación solo puede cambiar desde un conector autorizado; el estado general crea borradores."
             if document.get("documentNumber") or document.get("providerReference") or document.get("cufe") or document.get("attempts"):
@@ -682,11 +762,20 @@ def ledger_change_error(previous: dict, updated: dict) -> str | None:
         if len(after_rows) < len(before_rows) or after_rows[:len(before_rows)] != before_rows:
             return "Los libros de movimientos son inmutables; registra una reversión para corregir un dato."
 
+    removed_documents = removed_electronic_documents(previous, updated)
+    if any(not is_unsent_draft(document) for document in removed_documents):
+        return "Solo se puede eliminar un borrador que nunca se haya enviado al proveedor."
+    removed_document_ids = {str(document.get("id")) for document in removed_documents}
     for section in ("electronicDocuments", "supplierInvoices"):
         before_rows = previous.get(section, [])
         after_rows = updated.get(section, [])
         if not isinstance(before_rows, list) or not isinstance(after_rows, list):
             return f"La sección {section} debe conservar el formato de lista."
+        if section == "electronicDocuments":
+            before_rows = [
+                row for row in before_rows
+                if not isinstance(row, dict) or str(row.get("id")) not in removed_document_ids
+            ]
         if len(after_rows) < len(before_rows) or after_rows[:len(before_rows)] != before_rows:
             return "Los documentos tributarios y sus importaciones se conservan como historial; no se editan ni eliminan desde el estado general."
 
@@ -875,7 +964,7 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
     server_version = "Pyme360Local/1.0"
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(WEB_ROOT), **kwargs)
+        super().__init__(*args, directory=str(TYPESCRIPT_MODEL_ROOT), **kwargs)
 
     def log_message(self, fmt: str, *args) -> None:
         # Evita imprimir datos personales o consultas con parámetros en la terminal.
@@ -888,6 +977,7 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Security-Policy", CONTENT_SECURITY_POLICY)
         super().end_headers()
 
     def guess_type(self, path: str) -> str:
@@ -946,7 +1036,7 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         if "application/json" not in self.headers.get("Content-Type", "").lower():
             raise ValueError("El servidor esperaba datos JSON.")
         try:
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            payload = json.loads(self._read_body(length).decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError("Los datos recibidos no forman un JSON válido.") from exc
         if not isinstance(payload, dict):
@@ -965,7 +1055,7 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         if "xml" not in content_type and "text/plain" not in content_type:
             raise ValueError("El servidor esperaba el contenido de un archivo XML.")
         try:
-            return self.rfile.read(length).decode("utf-8-sig")
+            return self._read_body(length).decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise ValueError("El XML debe estar codificado en UTF-8.") from exc
 
@@ -1015,7 +1105,23 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                 connection.execute("DELETE FROM sessions WHERE token_hash=?", (hashlib.sha256(token.encode("utf-8")).hexdigest(),))
         return "pyme360_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
 
+    def _read_body(self, length: int) -> bytes:
+        self._request_body_read = True
+        return self.rfile.read(length)
+
+    def _discard_unread_body(self) -> None:
+        """Cerrar con datos sin leer aborta la conexión en Windows y el cliente pierde la respuesta."""
+        if getattr(self, "_request_body_read", False) or self.command not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return
+        if 0 < length <= MAX_BODY_BYTES:
+            self._read_body(length)
+
     def _json(self, status: int, payload: dict, headers: dict[str, str] | None = None) -> None:
+        self._discard_unread_body()
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1025,30 +1131,6 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
-
-    def _read_json(self) -> dict:
-        raw_length = self.headers.get("Content-Length", "")
-        try:
-            length = int(raw_length)
-        except ValueError as exc:
-            raise ValueError("La solicitud no indicó un tamaño válido.") from exc
-        if length < 1 or length > MAX_BODY_BYTES:
-            raise OverflowError("El archivo de datos supera el límite local de 20 MB.")
-        if "application/json" not in self.headers.get("Content-Type", "").lower():
-            raise ValueError("El servidor esperaba datos JSON.")
-        try:
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ValueError("Los datos recibidos no forman un JSON válido.") from exc
-        if not isinstance(payload, dict) or not isinstance(payload.get("state"), dict):
-            raise ValueError("No encontramos el estado de Pyme360 en la solicitud.")
-        if not isinstance(payload.get("expectedRevision"), int) or payload["expectedRevision"] < 0:
-            raise ValueError("La versión de los datos no es válida.")
-        state = payload["state"]
-        for key in ("contacts", "inventory", "sales", "purchases", "production", "environment", "activity", "importExtras"):
-            if key in state and not isinstance(state[key], list):
-                raise ValueError(f"La sección {key} debe ser una lista.")
-        return payload
 
     def _read_typescript_model_json(self) -> dict:
         raw_length = self.headers.get("Content-Length", "")
@@ -1061,11 +1143,11 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         if "application/json" not in self.headers.get("Content-Type", "").lower():
             raise ValueError("El servidor esperaba datos JSON.")
         try:
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            payload = json.loads(self._read_body(length).decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError("Los datos recibidos no forman un JSON válido.") from exc
         if not isinstance(payload, dict) or not isinstance(payload.get("state"), dict):
-            raise ValueError("No encontramos el estado del modelo TypeScript en la solicitud.")
+            raise ValueError("No encontramos el estado de Pyme360 en la solicitud.")
         expected_revision = payload.get("expectedRevision")
         if isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 0:
             raise ValueError("La versión de los datos no es válida.")
@@ -1434,9 +1516,14 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
             if not username or not password:
                 self._json(400, {"error": "Escribe el usuario y la contraseña."})
                 return True
+            wait_seconds = login_lock_remaining(username)
+            if wait_seconds:
+                self._json(429, {"error": f"Demasiados intentos fallidos. Espera {wait_seconds} segundos e inténtalo de nuevo."})
+                return True
             with db_session() as connection:
                 row = connection.execute("SELECT * FROM users WHERE username=? COLLATE NOCASE", (username,)).fetchone()
                 if row is None or not row["active"]:
+                    record_login_failure(username)
                     self._json(401, {"error": "Usuario o contraseña incorrectos."})
                     return True
                 if row["password_algorithm"] == "legacy_sha256":
@@ -1450,8 +1537,10 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                     candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(row["password_salt"]), int(row["password_iterations"])).hex()
                     valid_password = hmac.compare_digest(candidate, row["password_hash"])
             if not valid_password:
+                record_login_failure(username)
                 self._json(401, {"error": "Usuario o contraseña incorrectos."})
                 return True
+            clear_login_failures(username)
             cookie, expires_at = self._make_session(row["id"])
             with db_session() as connection:
                 write_audit(connection, public_user(row), "login", "session", row["id"])
@@ -1573,6 +1662,11 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if self._handle_auth("GET", path):
             return
+        if path in {"/", "/index.html"}:
+            self.send_response(302)
+            self.send_header("Location", "/typescript-model/")
+            self.end_headers()
+            return
         is_authorized = (
             self._is_typescript_model_request()
             if path.startswith(("/api/v1/typescript-model/", "/api/v1/sync/"))
@@ -1580,10 +1674,6 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         )
         if path.startswith("/api/") and not is_authorized:
             return self._json(403, {"error": "Esta API solo acepta solicitudes del mismo computador."})
-        if path == "/api/v1/state":
-            if not self._session_user():
-                return self._json(401, {"error": "Inicia sesión para consultar los datos."})
-            return self._json(200, state_row())
         if path == "/api/v1/typescript-model/state":
             if not self._session_user():
                 return self._json(401, {"error": "Inicia sesión para consultar los datos."})
@@ -1754,54 +1844,7 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if path == "/api/v1/typescript-model/state":
             return self._put_typescript_model_state()
-        if path != "/api/v1/state":
-            return self._json(404, {"error": "No encontramos esta dirección."})
-        if not self._is_local_request():
-            return self._json(403, {"error": "Esta API solo acepta solicitudes del mismo computador."})
-        actor = self._session_user()
-        if not actor:
-            return self._json(401, {"error": "Inicia sesión para guardar cambios."})
-        if actor["role"] != "admin":
-            return self._json(403, {"error": "La interfaz antigua solo admite cambios de administradores. Usa el espacio de trabajo actual de Pyme360."})
-        try:
-            request_payload = self._read_json()
-        except OverflowError as exc:
-            return self._json(413, {"error": str(exc)})
-        except ValueError as exc:
-            return self._json(400, {"error": str(exc)})
-
-        serialized = json.dumps(request_payload["state"], ensure_ascii=False, separators=(",", ":"))
-        current_time = datetime.now(timezone.utc).isoformat()
-        try:
-            with db_session() as connection:
-                connection.execute("BEGIN IMMEDIATE")
-                row = connection.execute("SELECT revision FROM app_state WHERE id = 1").fetchone()
-                current_revision = int(row["revision"]) if row else 0
-                if current_revision != request_payload["expectedRevision"]:
-                    connection.rollback()
-                    return self._json(409, {"error": "Los datos cambiaron en otra pestaña.", **state_row()})
-                previous_payload_row = connection.execute("SELECT payload_json FROM app_state WHERE id = 1").fetchone()
-                previous_state = json.loads(previous_payload_row["payload_json"]) if previous_payload_row else {}
-                next_revision = current_revision + 1
-                connection.execute(
-                    """INSERT INTO app_state (id, schema_version, revision, payload_json, updated_at)
-                       VALUES (1, ?, ?, ?, ?)
-                       ON CONFLICT(id) DO UPDATE SET schema_version=excluded.schema_version,
-                         revision=excluded.revision, payload_json=excluded.payload_json, updated_at=excluded.updated_at""",
-                    (SCHEMA_VERSION, next_revision, serialized, current_time),
-                )
-                before_keys = set(previous_state) if isinstance(previous_state, dict) else set()
-                after_state = request_payload["state"]
-                after_keys = set(after_state) if isinstance(after_state, dict) else set()
-                write_audit(connection, actor, "updated", "legacy_application_state", "legacy", {"fields": sorted(before_keys | after_keys)})
-                connection.commit()
-        except sqlite3.Error as exc:
-            return self._json(500, {"error": "SQLite no pudo guardar los datos. Revisa el espacio y los permisos del computador.", "detail": str(exc)})
-        try:
-            create_daily_backup(force=True)
-        except (OSError, sqlite3.Error) as exc:
-            print(f"Aviso: no se pudo actualizar la copia diaria: {exc}")
-        self._json(200, {"revision": next_revision, "schemaVersion": SCHEMA_VERSION, "updatedAt": current_time})
+        return self._json(404, {"error": "No encontramos esta dirección."})
 
     def _put_typescript_model_state(self) -> None:
         if not self._is_typescript_model_request():
@@ -1832,7 +1875,7 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                 current_revision = int(row["revision"]) if row else 0
                 if current_revision != request_payload["expectedRevision"]:
                     connection.rollback()
-                    return self._json(409, {"error": "Los datos del modelo cambiaron en otra pestaña.", **typescript_model_state_row()})
+                    return self._json(409, {"error": "Los datos cambiaron en otra pestaña.", **typescript_model_state_row()})
                 previous_state = json.loads(row["payload_json"]) if row else {
                     "schemaVersion": TYPESCRIPT_MODEL_SCHEMA_VERSION,
                     "company": None,
@@ -1853,11 +1896,23 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                     if ledger_error:
                         connection.rollback()
                         return self._json(400, {"error": ledger_error})
+                    value_error = business_value_error(previous_state, updated_state)
+                    if value_error:
+                        connection.rollback()
+                        return self._json(400, {"error": value_error})
                 if actor["role"] == "operator":
                     role_error = operator_change_error(previous_state, updated_state)
                     if role_error:
                         connection.rollback()
                         return self._json(403, {"error": role_error})
+                if (
+                    not restore_requested
+                    and removed_electronic_documents(previous_state, updated_state)
+                    and connection.execute("SELECT 1 FROM sync_configuration WHERE id=1").fetchone()
+                ):
+                    # La API central conserva estos documentos como inmutables.
+                    connection.rollback()
+                    return self._json(409, {"error": "Este equipo está vinculado a la nube: los borradores electrónicos no se pueden eliminar porque la API central los conserva como historial."})
                 next_revision = current_revision + 1
                 connection.execute(
                     """INSERT INTO typescript_model_state (id, schema_version, revision, payload_json, updated_at)
@@ -1883,7 +1938,7 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                     )
                 connection.commit()
         except sqlite3.Error as exc:
-            return self._json(500, {"error": "SQLite no pudo guardar los datos del modelo. Revisa el espacio y los permisos del computador.", "detail": str(exc)})
+            return self._json(500, {"error": "SQLite no pudo guardar los datos. Revisa el espacio y los permisos del computador.", "detail": str(exc)})
         try:
             create_daily_backup(force=True)
         except (OSError, sqlite3.Error) as exc:
@@ -2794,16 +2849,15 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         self._json(405, {"error": "Esta operación no está disponible."})
 
     def translate_path(self, path: str) -> str:
-        # SimpleHTTPRequestHandler permite estáticos, pero nunca salir de la carpeta web.
+        # SimpleHTTPRequestHandler permite estáticos, pero nunca salir de la compilación.
         parsed = urllib.parse.urlsplit(path)
         parts = [part for part in urllib.parse.unquote(parsed.path).split("/") if part and part not in (".", "..")]
         if any(part.startswith(".") for part in parts) or (parts and Path(parts[-1]).suffix.lower() in {".py", ".ps1", ".bat", ".sh", ".command"}):
-            return str(WEB_ROOT / "__not_found__")
-        if parts and parts[0] == "typescript-model":
-            root = TYPESCRIPT_MODEL_ROOT.resolve()
-            parts = parts[1:]
-        else:
-            root = WEB_ROOT.resolve()
+            return str(TYPESCRIPT_MODEL_ROOT / "__not_found__")
+        root = TYPESCRIPT_MODEL_ROOT.resolve()
+        if not parts or parts[0] != "typescript-model":
+            return str(root / "__not_found__")
+        parts = parts[1:]
         candidate = root.joinpath(*parts).resolve()
         try:
             candidate.relative_to(root)
@@ -2823,7 +2877,6 @@ class LoopbackHTTPServer(ThreadingHTTPServer):
 def main() -> int:
     parser = argparse.ArgumentParser(description="Servidor local de Pyme360")
     parser.add_argument("--no-browser", action="store_true", help="No abrir el navegador al iniciar")
-    parser.add_argument("--app", choices=("legacy", "typescript-model"), default="typescript-model", help="Interfaz que se abre")
     arguments = parser.parse_args()
     load_env_file(Path(__file__).with_name(".env"))
     if sys.version_info < MIN_PYTHON:
@@ -2850,8 +2903,7 @@ def main() -> int:
     if server is None:
         print("No hay un puerto disponible entre 8765 y 8790. Cierra otra ventana de Pyme360 e inténtalo de nuevo.")
         return 1
-    app_path = "/typescript-model/" if arguments.app == "typescript-model" else "/index.html"
-    url = f"http://127.0.0.1:{server.server_port}{app_path}"
+    url = f"http://127.0.0.1:{server.server_port}/typescript-model/"
     print(f"Pyme360 está disponible en {url}")
     print(f"Base de datos local: {DB_PATH}")
     print(f"Copias de seguridad: {BACKUP_DIR} (siete días rotativos)")

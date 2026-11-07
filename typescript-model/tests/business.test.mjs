@@ -254,3 +254,108 @@ test("sin costo de catálogo no presenta un costo total ficticio", () => {
   const completed = business.completeProductionOrder(started, order.id, 0, "2026-10-31");
   assert.equal(completed.productionOrders[0].materialCostPerGoodUnit, null);
 });
+
+test("un borrador electrónico sin enviar se elimina y libera la venta", () => {
+  const { state: initial, customer, finished } = createState();
+  let state = business.createSale(initial, {
+    customerId: customer.id,
+    date: "2026-01-10",
+    lines: [{ productId: finished.id, quantity: 1 }],
+    discount: 0,
+    initialPayment: 0,
+    invoiceFollowUpStatus: "to_review",
+    externalInvoiceNumber: "",
+    externalInvoiceDate: "",
+  });
+  const sale = state.sales[0];
+  state = { ...state, company: { name: "Empresa", taxId: "900", city: "Medellín", activity: "" } };
+  state = business.prepareElectronicInvoice(state, sale.id, "Prueba");
+  assert.throws(() => business.deleteSale(state, sale.id), /Facturación y documentos/);
+
+  const draft = state.electronicDocuments[0];
+  const sent = { ...state, electronicDocuments: [{ ...draft, status: "transmitted" }] };
+  assert.throws(() => business.deleteElectronicDraft(sent, draft.id), /nunca se haya enviado/);
+  const attempted = {
+    ...state,
+    electronicDocuments: [{ ...draft, attempts: [{ id: "attempt-1" }] }],
+  };
+  assert.throws(() => business.deleteElectronicDraft(attempted, draft.id), /nunca se haya enviado/);
+
+  state = business.deleteElectronicDraft(state, draft.id);
+  assert.equal(state.electronicDocuments.length, 0);
+  assert.equal(business.deleteSale(state, sale.id).sales.length, 0);
+});
+
+test("el costo se recalcula con promedio ponderado y se revierte al eliminar la compra", () => {
+  const { state: initial, supplier, material } = createState();
+  const received = {
+    supplierId: supplier.id,
+    date: "2026-01-10",
+    status: "received",
+    lines: [{ productId: material.id, quantity: 20, lineTotal: 2000 }],
+  };
+  let state = business.createPurchase(initial, received);
+  const cost = () => state.products.find((product) => product.id === material.id).unitCost;
+  assert.equal(cost(), 75);
+
+  const pending = business.createPurchase(initial, { ...received, status: "pending" });
+  assert.equal(pending.products.find((item) => item.id === material.id).unitCost, 50);
+
+  state = business.deletePurchase(state, state.purchases[0].id);
+  assert.equal(cost(), 50);
+});
+
+test("completar una orden asigna al producto el costo de materiales por unidad buena", () => {
+  const { state: initial, finished } = createState();
+  let state = business.createProductionOrder(initial, finished.id, 4, "2026-01-10");
+  state = business.completeProductionOrder(state, state.productionOrders[0].id, 0, "2026-01-11");
+  assert.equal(state.products.find((item) => item.id === finished.id).unitCost, 100);
+});
+
+test("un contacto rechaza teléfono inválido, NIT corto e identificación repetida", () => {
+  const contact = {
+    name: "Proveedor",
+    role: "supplier",
+    ordinaryCustomer: false,
+    taxId: "900123456-7",
+    email: "",
+    phone: "604 444 5566",
+  };
+  const state = business.addContact(business.createEmptyState(), contact);
+  assert.throws(() => business.addContact(state, { ...contact, taxId: "", phone: "abc" }), /teléfono/);
+  assert.throws(() => business.addContact(state, { ...contact, taxId: "123" }), /6 dígitos/);
+  assert.throws(() => business.addContact(state, { ...contact, taxId: "900.123.456-7" }), /Ya existe/);
+  assert.equal(
+    business.addContact(state, { ...contact, taxId: "AB1234", identificationType: "PASSPORT" }).contacts
+      .length,
+    2,
+  );
+
+  const legacy = { ...state, contacts: [{ ...state.contacts[0], phone: "abc" }] };
+  const updated = business.updateContact(legacy, legacy.contacts[0].id, {
+    ...legacy.contacts[0],
+    email: "nuevo@ejemplo.test",
+  });
+  assert.equal(updated.contacts[0].email, "nuevo@ejemplo.test");
+});
+
+test("eliminar una venta intermedia no repite el número de la siguiente", () => {
+  const { state: initial, customer, finished } = createState();
+  const sale = {
+    customerId: customer.id,
+    date: "2026-01-10",
+    lines: [{ productId: finished.id, quantity: 1 }],
+    discount: 0,
+    initialPayment: 0,
+    invoiceFollowUpStatus: "to_review",
+    externalInvoiceNumber: "",
+    externalInvoiceDate: "",
+  };
+  let state = business.createSale(initial, sale);
+  state = business.createSale(state, sale);
+  const first = state.sales.find((item) => item.number === "V-0001");
+  state = business.deleteSale(state, first.id);
+  state = business.createSale(state, sale);
+  const numbers = state.sales.map((item) => item.number).sort();
+  assert.deepEqual(numbers, ["V-0002", "V-0003"]);
+});

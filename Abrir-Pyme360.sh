@@ -27,9 +27,9 @@ if [ -z "$PYTHON" ]; then
 fi
 
 if [ "$PYTHON" = "py -3" ]; then
-    py -3 "$SCRIPT_DIR/server/serve-local.py" --app typescript-model
+    py -3 "$SCRIPT_DIR/server/serve-local.py"
 else
-    "$PYTHON" "$SCRIPT_DIR/server/serve-local.py" --app typescript-model
+    "$PYTHON" "$SCRIPT_DIR/server/serve-local.py"
 fi
 STATUS=$?
 

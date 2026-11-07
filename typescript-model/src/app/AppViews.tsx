@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   outstandingBalance,
   payableBalance,
@@ -24,8 +24,6 @@ import type {
   AppState,
   Contact,
   ElectronicDocument,
-  EnvironmentalRecord,
-  EnvironmentalConfig,
   ReceiptExtraction,
   InvoiceFollowUpStatus,
   Product,
@@ -120,6 +118,59 @@ export type ModalState =
   | { type: "environment-config" }
   | null;
 
+const MOVEMENT_SOURCE_LABELS: Record<"sale" | "purchase" | "production" | "adjustment", string> = {
+  sale: "Venta",
+  purchase: "Compra",
+  production: "Producción",
+  adjustment: "Ajuste",
+};
+
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  created: "Creó",
+  updated: "Actualizó",
+  deleted: "Eliminó",
+  login: "Inició sesión",
+  logout: "Cerró sesión",
+  migrated: "Migró",
+  resolved: "Resolvió",
+  restored: "Restauró",
+  synchronized: "Sincronizó",
+};
+
+const AUDIT_ENTITY_LABELS: Record<string, string> = {
+  application_data: "Datos de la aplicación",
+  cashMovements: "Movimiento de dinero",
+  company: "Empresa",
+  contacts: "Contacto",
+  electronicDocuments: "Documento electrónico",
+  electronic_document: "Documento electrónico",
+  emissionFactors: "Factor de emisión",
+  environmentalActions: "Acción ambiental",
+  environmentalConfig: "Configuración ambiental",
+  environmentalRecords: "Registro ambiental",
+  financialAccounts: "Cuenta de caja o banco",
+  importExtras: "Campo adicional",
+  indicatorTargets: "Meta ambiental",
+  inventoryMovements: "Movimiento de inventario",
+  products: "Producto",
+  productionOrders: "Orden de producción",
+  purchases: "Compra",
+  receiptImports: "Recibo ambiental",
+  recipes: "Receta",
+  resourceReadings: "Lectura ambiental",
+  sales: "Venta",
+  session: "Sesión",
+  supplierInvoices: "Factura de proveedor",
+  sync_conflict: "Conflicto de sincronización",
+  taxConfiguration: "Configuración tributaria",
+  user: "Usuario",
+  users: "Usuarios",
+  workspace: "Espacio de empresa",
+};
+
+const auditActionLabel = (action: string) => AUDIT_ACTION_LABELS[action] ?? action;
+const auditEntityLabel = (entity: string) => AUDIT_ENTITY_LABELS[entity] ?? entity;
+
 export const PAGE_TITLES: Record<Page, string> = {
   overview: "Resumen",
   contacts: "Contactos",
@@ -157,6 +208,11 @@ export function formatNumber(value: number, digits = 2): string {
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: digits }).format(value);
 }
 
+export function formatQuantity(value: number, unit: string | undefined): string {
+  const label = unit === "unidad" && Math.abs(value) !== 1 ? "unidades" : (unit ?? "");
+  return `${formatNumber(value)} ${label}`.trim();
+}
+
 export function today(): string {
   const date = new Date();
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
@@ -171,6 +227,20 @@ export function formatDate(value: string): string {
   if (!value) return "—";
   const date = new Date(`${value}T12:00:00`);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("es-CO").format(date);
+}
+
+function formatLocalDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("es-CO", { dateStyle: "short" }).format(date);
+}
+
+function formatLocalDateTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("es-CO", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
 function productTypeLabel(type: ProductType): string {
@@ -235,15 +305,67 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const hasChanges = useRef(false);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  // Esc y el fondo son fáciles de pulsar sin querer; los botones Cerrar y Cancelar son explícitos.
+  function requestClose() {
+    if (hasChanges.current && !window.confirm("¿Descartar los cambios sin guardar?")) return;
+    closeRef.current();
+  }
+
+  useEffect(() => {
+    const returnFocusTo =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.focus();
+
+    function manageKeyboard(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        requestClose();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary',
+        ),
+      ).filter((element) => element.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || active === dialogRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    window.addEventListener("keydown", manageKeyboard);
+    return () => {
+      window.removeEventListener("keydown", manageKeyboard);
+      returnFocusTo?.focus();
+    };
+  }, []);
+
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center overflow-y-auto bg-emerald-950/55 p-3 backdrop-blur-[2px] sm:p-6"
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) requestClose();
       }}
     >
       <section
-        className={`max-h-[calc(100dvh-1.5rem)] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-line bg-surface shadow-panel sm:max-h-[calc(100dvh-3rem)]${wide ? " max-w-[760px]" : ""}`}
+        ref={dialogRef}
+        tabIndex={-1}
+        onChange={() => {
+          hasChanges.current = true;
+        }}
+        className={`outline-none max-h-[calc(100dvh-1.5rem)] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-line bg-surface shadow-panel sm:max-h-[calc(100dvh-3rem)]${wide ? " max-w-[760px]" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
@@ -557,7 +679,9 @@ export function OverviewPage({
   const lowStock = state.products.filter((product) => product.stock <= product.minimumStock);
   const pendingPurchases = state.purchases.filter((purchase) => purchase.status === "pending");
   const activeOrders = state.productionOrders.filter((order) => order.status === "active");
-  const missingEnvironment = !state.environmentalRecords.some((record) => record.period === period);
+  const missingEnvironment =
+    !state.environmentalRecords.some((record) => record.period === period) &&
+    !state.resourceReadings.some((reading) => reading.periodEnd.slice(0, 7) === period);
   const todayDate = new Date(`${today()}T12:00:00`);
   const weeklySales = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(todayDate);
@@ -600,7 +724,7 @@ export function OverviewPage({
         )}
         detail={lowStock
           .slice(0, 4)
-          .map((product) => `${product.name} (${formatNumber(product.stock)} ${product.unit})`)
+          .map((product) => `${product.name} (${formatQuantity(product.stock, product.unit)})`)
           .join(" · ")}
         action="Ver inventario"
         onClick={() => openPage("inventory")}
@@ -803,11 +927,11 @@ export function OverviewPage({
             />
           </div>
         </Panel>
-        <Panel title="Contexto del modelo" description="Operación local para una empresa">
+        <Panel title="Alcance de Pyme360" description="Operación local para una empresa">
           <div className="panel-body">
             <p className="field-hint">
-              Los valores de IVA son configurables para estimación. Este modelo no emite documentos
-              tributarios ni reemplaza el sistema contable.
+              Los valores de IVA son configurables para estimación. Pyme360 no reemplaza el sistema
+              contable, y la emisión electrónica requiere un proveedor tecnológico autorizado.
             </p>
           </div>
         </Panel>
@@ -1073,7 +1197,7 @@ export function InventoryPage({
                     <Status tone="warning">Bajo mínimo</Status>
                   </div>
                   <p className="my-3 text-sm text-subtle">
-                    Faltan <strong className="text-ink">{formatNumber(quantity)} {product.unit}</strong> para alcanzar el mínimo de {formatNumber(product.minimumStock)} {product.unit}.
+                    Faltan <strong className="text-ink">{formatQuantity(quantity, product.unit)}</strong> para alcanzar el mínimo de {formatQuantity(product.minimumStock, product.unit)}.
                   </p>
                   {canEdit && (
                     product.type === "finished" ? activeRecipe ? (
@@ -1175,10 +1299,10 @@ export function InventoryPage({
                         </td>
                         <td>{productTypeLabel(product.type)}</td>
                         <td>
-                          {formatNumber(product.stock)} {product.unit}
+                          {formatQuantity(product.stock, product.unit)}
                         </td>
                         <td>
-                          {formatNumber(product.minimumStock)} {product.unit}
+                          {formatQuantity(product.minimumStock, product.unit)}
                         </td>
                         <td>
                           {formatMoney(product.unitCost)}
@@ -1253,13 +1377,13 @@ export function InventoryPage({
                       <div>
                         <span>Existencia</span>
                         <strong>
-                          {formatNumber(product.stock)} {product.unit}
+                          {formatQuantity(product.stock, product.unit)}
                         </strong>
                       </div>
                       <div>
                         <span>Mínimo</span>
                         <strong>
-                          {formatNumber(product.minimumStock)} {product.unit}
+                          {formatQuantity(product.minimumStock, product.unit)}
                         </strong>
                       </div>
                       <div>
@@ -1338,7 +1462,7 @@ export function InventoryPage({
                 <tbody>
                   {recentMovements.map((movement) => (
                     <tr key={movement.id}>
-                      <td>{formatDate(movement.occurredAt.slice(0, 10))}</td>
+                      <td>{formatLocalDate(movement.occurredAt)}</td>
                       <td>
                         <strong>{movement.productName}</strong>
                         <small>{movement.sku}</small>
@@ -1346,17 +1470,15 @@ export function InventoryPage({
                       <td>
                         <Status tone={movement.quantity < 0 ? "warning" : "good"}>
                           {movement.quantity > 0 ? "+" : ""}
-                          {formatNumber(movement.quantity)} {movement.unit}
+                          {formatQuantity(movement.quantity, movement.unit)}
                         </Status>
                       </td>
                       <td>
-                        {formatNumber(movement.balanceAfter)} {movement.unit}
+                        {formatQuantity(movement.balanceAfter, movement.unit)}
                       </td>
                       <td>{movement.reason}</td>
                       <td>
-                        {movement.sourceType
-                          ? `${movement.sourceType} · ${movement.sourceId ?? ""}`
-                          : "Manual"}
+                        {movement.sourceType ? MOVEMENT_SOURCE_LABELS[movement.sourceType] : "Manual"}
                       </td>
                     </tr>
                   ))}
@@ -1370,17 +1492,17 @@ export function InventoryPage({
                     <div className="mobile-record-main">
                       <strong>{movement.productName}</strong>
                       <span>
-                        {formatDate(movement.occurredAt.slice(0, 10))} · {movement.sku}
+                        {formatLocalDate(movement.occurredAt)} · {movement.sku}
                       </span>
                     </div>
                     <Status tone={movement.quantity < 0 ? "warning" : "good"}>
                       {movement.quantity > 0 ? "+" : ""}
-                      {formatNumber(movement.quantity)} {movement.unit}
+                      {formatQuantity(movement.quantity, movement.unit)}
                     </Status>
                   </div>
                   <div className="mobile-record-details">
                     <span>
-                      Saldo: {formatNumber(movement.balanceAfter)} {movement.unit}
+                      Saldo: {formatQuantity(movement.balanceAfter, movement.unit)}
                     </span>
                     <span>{movement.reason}</span>
                   </div>
@@ -2400,7 +2522,9 @@ export function AuditPage() {
     const searchableText = [
       event.actorUsername,
       event.action,
+      auditActionLabel(event.action),
       event.entityType,
+      auditEntityLabel(event.entityType),
       event.entityId,
       ...(event.details.fields ?? []),
     ]
@@ -2433,7 +2557,7 @@ export function AuditPage() {
               <span className="text-xs text-muted">
                 Último evento:{" "}
                 {latestEvent
-                  ? `${formatDate(latestEvent.occurredAt.slice(0, 10))} ${latestEvent.occurredAt.slice(11, 16)}`
+                  ? formatLocalDateTime(latestEvent.occurredAt)
                   : "—"}
               </span>
             </div>
@@ -2455,7 +2579,7 @@ export function AuditPage() {
               <option value="all">Todas las acciones</option>
               {actions.map((action) => (
                 <option key={action} value={action}>
-                  {action}
+                  {auditActionLabel(action)}
                 </option>
               ))}
             </select>
@@ -2468,7 +2592,7 @@ export function AuditPage() {
               <option value="all">Todas las entidades</option>
               {entities.map((entity) => (
                 <option key={entity} value={entity}>
-                  {entity}
+                  {auditEntityLabel(entity)}
                 </option>
               ))}
             </select>
@@ -2497,9 +2621,9 @@ export function AuditPage() {
                       <strong className="text-xs font-semibold text-ink">
                         {event.actorUsername}
                       </strong>
-                      <Status>{event.action}</Status>
+                      <Status>{auditActionLabel(event.action)}</Status>
                       <span className="text-xs text-muted">
-                        {event.entityType} · {event.entityId}
+                        {auditEntityLabel(event.entityType)}
                       </span>
                     </div>
                     <div className="flex items-center gap-3 text-xs text-muted">
@@ -2509,7 +2633,7 @@ export function AuditPage() {
                           : "Sin campos asociados"}
                       </span>
                       <time dateTime={event.occurredAt}>
-                        {formatDate(event.occurredAt.slice(0, 10))} {event.occurredAt.slice(11, 16)}
+                        {formatLocalDateTime(event.occurredAt)}
                       </time>
                     </div>
                   </article>
@@ -2535,12 +2659,11 @@ export function AuditPage() {
                       {filteredEvents.map((event) => (
                         <tr key={event.id}>
                           <td>
-                            {formatDate(event.occurredAt.slice(0, 10))}{" "}
-                            {event.occurredAt.slice(11, 16)}
+                            {formatLocalDateTime(event.occurredAt)}
                           </td>
                           <td>{event.actorUsername}</td>
-                          <td>{event.action}</td>
-                          <td>{event.entityType}</td>
+                          <td>{auditActionLabel(event.action)}</td>
+                          <td>{auditEntityLabel(event.entityType)}</td>
                           <td>{event.entityId}</td>
                           <td>{event.details.fields?.join(", ") || "—"}</td>
                         </tr>
@@ -2836,7 +2959,7 @@ export function ProductionPage({
                     {activeVersion ? (
                       <div className="mt-3 grid gap-2 text-sm">
                         <p className="m-0 text-subtle">
-                          Lote base: <strong>{formatNumber(activeVersion.baseQuantity)} {product.unit}</strong> · Rendimiento: <strong>{formatNumber(activeVersion.expectedYieldPercent)}%</strong>
+                          Lote base: <strong>{formatQuantity(activeVersion.baseQuantity, product.unit)}</strong> · Rendimiento: <strong>{formatNumber(activeVersion.expectedYieldPercent)}%</strong>
                         </p>
                         <ul className="m-0 grid gap-1 pl-5 text-subtle">
                           {activeVersion.components.map((component) => {
@@ -2869,7 +2992,7 @@ export function ProductionPage({
                             <div key={archived.id} className="rounded-xl border border-line-soft bg-surface-muted p-3 text-sm">
                               <strong>Versión {archived.versionNumber}</strong>
                               <p className="m-0 mt-1 text-subtle">
-                                Lote base {formatNumber(archived.baseQuantity)} {product.unit} · rendimiento {formatNumber(archived.expectedYieldPercent)} %
+                                Lote base {formatQuantity(archived.baseQuantity, product.unit)} · rendimiento {formatNumber(archived.expectedYieldPercent)} %
                               </p>
                               <p className="m-0 mt-1 text-subtle">
                                 {archived.components.map((component) => {
@@ -2900,205 +3023,6 @@ export function ProductionPage({
           ) : (
             <EmptyState>Registra primero un producto terminado para configurar su receta.</EmptyState>
           )}
-        </Panel>
-      )}
-    </>
-  );
-}
-
-export function EnvironmentPage({
-  records,
-  config,
-  onEdit,
-  onDelete,
-  onImport,
-  onConfigure,
-  canEdit,
-}: {
-  records: EnvironmentalRecord[];
-  config?: EnvironmentalConfig;
-  onEdit: (record?: EnvironmentalRecord) => void;
-  onDelete: (record: EnvironmentalRecord) => void;
-  onImport: (file: File) => void;
-  onConfigure: () => void;
-  canEdit: boolean;
-}) {
-  const current = records.find((record) => record.period === currentMonth());
-  const sorted = records.slice().sort((a, b) => b.period.localeCompare(a.period));
-  const previous = sorted.find((record) => record.period < (current?.period ?? "9999-99"));
-  return (
-    <>
-      <PageHeading
-        title="Impacto ambiental"
-        description="Registra consumos y producción por mes para crear una referencia propia."
-        action={canEdit ? () => onEdit(current) : undefined}
-        actionLabel={current ? "Actualizar mes actual" : "Registrar mes actual"}
-      />
-      <div className="notice">
-        Ingresa datos confirmados de energía, agua, combustible, producción y residuos. Los recibos
-        se procesan localmente y no se conservan.
-      </div>
-      <Panel
-        title="Proveedor configurado"
-        description="Referencia local para la lectura de recibos."
-        action={
-          canEdit ? (
-            <button className="button button-secondary button-small" onClick={onConfigure}>
-              Configurar
-            </button>
-          ) : undefined
-        }
-      >
-        <div className="panel-body">
-          <strong>{config?.providerName ?? "Enel Colombia"}</strong>
-          <p className="field-hint">
-            {config?.accountNumber
-              ? `Cuenta ${config.accountNumber}`
-              : "Sin número de cuenta guardado"}
-            {config?.businessUnit ? ` · ${config.businessUnit}` : ""}
-          </p>
-        </div>
-      </Panel>
-      <Panel
-        title="Importar recibo"
-        description="Descarga el recibo desde el portal de Enel y selecciónalo aquí para extraer sus datos."
-      >
-        <div className="panel-body alert-list">
-          <div className="receipt-actions">
-            <button
-              className="button button-secondary"
-              type="button"
-              onClick={() =>
-                window.open(
-                  "https://www.enel.com.co/es/personas/nuevas-transacciones.html",
-                  "_blank",
-                  "noopener,noreferrer",
-                )
-              }
-            >
-              Abrir portal Enel
-            </button>
-            <label className={`button button-secondary${canEdit ? "" : " disabled"}`}>
-              Seleccionar PDF, JPG o PNG
-              <input
-                type="file"
-                hidden
-                disabled={!canEdit}
-                accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0];
-                  if (file) onImport(file);
-                  event.currentTarget.value = "";
-                }}
-              />
-            </label>
-            <span className="field-hint">
-              Proveedor inicial: Enel Colombia · lectura y OCR en este dispositivo.
-            </span>
-          </div>
-        </div>
-      </Panel>
-      <Panel
-        title="Historial mensual"
-        description="Consumo por unidad producida, cuando hay producción registrada."
-      >
-        {sorted.length ? (
-          <div className="panel-body environment-chart">
-            {sorted.map((record) => (
-              <div className="environment-row" key={record.id}>
-                <strong>{record.period}</strong>
-                <span>
-                  {formatNumber(record.electricityKwh)} kWh · {formatNumber(record.waterM3)} m³
-                </span>
-                <span>
-                  {record.productionUnits > 0
-                    ? `${formatNumber(record.electricityKwh / record.productionUnits)} kWh/u`
-                    : "Sin producción"}
-                </span>
-                <span>
-                  {record.productionUnits > 0
-                    ? `${formatNumber(record.waterM3 / record.productionUnits)} m³/u`
-                    : "—"}
-                </span>
-                <span>
-                  <Status tone={record.source === "local_receipt" ? "good" : ""}>
-                    {record.sourceLabel ?? "Manual"}
-                  </Status>
-                </span>
-                {canEdit && (
-                  <span className="table-actions">
-                    <button
-                      className="button button-secondary button-small"
-                      onClick={() => onEdit(record)}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      className="icon-button"
-                      onClick={() => onDelete(record)}
-                      aria-label="Eliminar registro ambiental"
-                    >
-                      ×
-                    </button>
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState>
-            Aún no hay registros ambientales. Los indicadores aparecerán al guardar el primer mes.
-          </EmptyState>
-        )}
-      </Panel>
-      {current && (
-        <Panel
-          title={`Detalle de ${current.period}`}
-          description="Últimos valores guardados del mes actual."
-        >
-          <div className="panel-body">
-            <div className="metric-grid">
-              <Metric
-                label="Energía"
-                value={`${formatNumber(current.electricityKwh)} kWh`}
-                note={
-                  current.productionUnits
-                    ? `${formatNumber(current.electricityKwh / current.productionUnits)} kWh por unidad`
-                    : "Sin unidades producidas"
-                }
-                tone="info"
-              />
-              <Metric
-                label="Agua"
-                value={`${formatNumber(current.waterM3)} m³`}
-                note={
-                  current.productionUnits
-                    ? `${formatNumber(current.waterM3 / current.productionUnits)} m³ por unidad`
-                    : "Sin unidades producidas"
-                }
-                tone="brand"
-              />
-              <Metric
-                label="Combustible"
-                value={`${formatNumber(current.fuelLiters)} L`}
-                note="Consumo total del período"
-                tone="warning"
-              />
-              <Metric
-                label="Residuos / aprovechado"
-                value={`${formatNumber(current.wasteKg)} / ${formatNumber(current.recoveredKg)} kg`}
-                note="Cantidades del período"
-                tone="success"
-              />
-            </div>
-            {previous && (
-              <p className="field-hint">
-                Comparación con {previous.period}: energía{" "}
-                {formatNumber(current.electricityKwh - previous.electricityKwh)} kWh y agua{" "}
-                {formatNumber(current.waterM3 - previous.waterM3)} m³.
-              </p>
-            )}
-          </div>
         </Panel>
       )}
     </>
@@ -3172,28 +3096,32 @@ export function DataPage({
       <div className="two-column">
         <Panel
           title="Respaldo JSON"
-          description="Descarga o restaura el estado completo del modelo."
+          description="Descarga o restaura todos los datos del negocio."
         >
           <div className="panel-body alert-list">
             <button className="button button-primary" onClick={() => downloadBackup(state)}>
               Descargar respaldo JSON
             </button>
             {canRestore ? (
-              <label className="field">
+              <>
+                <label className="button button-secondary">
+                  Restaurar desde archivo JSON
+                  <input
+                    type="file"
+                    hidden
+                    accept="application/json,.json"
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0];
+                      if (file) onRestore(file);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
                 <span className="field-hint">
                   Al restaurar un respaldo, reemplazará los datos actuales. Las cuentas y la
                   auditoría se conservarán.
                 </span>
-                <input
-                  type="file"
-                  accept="application/json,.json"
-                  onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
-                    if (file) onRestore(file);
-                    event.currentTarget.value = "";
-                  }}
-                />
-              </label>
+              </>
             ) : (
               <span className="field-hint">Solo un administrador puede restaurar un respaldo.</span>
             )}
@@ -3256,7 +3184,7 @@ export function DataPage({
           </div>
         </Panel>
       </div>
-      <Panel title="Datos actuales" description="Registros incluidos en el modelo local.">
+      <Panel title="Datos actuales" description="Registros guardados en este equipo.">
         <div className="panel-body alert-list">
           {counts.map(([label, count]) => (
             <div className="alert-item" key={label}>
@@ -3268,7 +3196,7 @@ export function DataPage({
           ))}
         </div>
       </Panel>
-      <Panel title="Alcance" description="Modelo local de negocio Pyme360">
+      <Panel title="Alcance" description="Operación local de Pyme360">
         <div className="panel-body">
           <p className="field-hint">
             Esta versión está pensada para una empresa en un solo computador. Los recibos se leen
@@ -3339,7 +3267,7 @@ export function LoginScreen({
         <h1>{setup ? "Crear administrador" : "Iniciar sesión"}</h1>
         <p>
           {setup
-            ? "Configura la primera cuenta. Solo administradores pueden editar o eliminar información."
+            ? "Configura la primera cuenta. Después podrás crear usuarios con distintos permisos."
             : "Accede para consultar o administrar los datos locales."}
         </p>
         <label className="field">

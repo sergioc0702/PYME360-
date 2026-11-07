@@ -45,7 +45,7 @@ La interfaz compilada queda en `dist/`; el servidor local la entrega en `/typesc
 
 La interfaz usa Tailwind CSS v4 con el plugin oficial de Vite. Sus utilidades se generan durante la compilación y no agregan código de estilos en tiempo de ejecución. No se necesita `tailwind.config.js`: `src/tailwind.css` contiene el `@import`, los tokens de marca y tema y los estilos base.
 
-La navegación agrupa módulos en una barra lateral contraíble de 240/72 px en escritorio. En móvil se abre como menú y añade accesos inferiores a Inicio, Ventas e Inventario, con el resto bajo **Más**. Los listados operativos y financieros cambian de tablas a tarjetas para que las acciones y los datos principales se lean sin desplazamiento horizontal. El apartado ambiental conserva tablas anchas donde hacen falta comparaciones detalladas. Ventas y documentos tributarios se consultan en secciones separadas para evitar una pantalla excesivamente larga.
+La navegación agrupa módulos en una barra lateral contraíble de 272/72 px en escritorio, con el botón **Expandir menú**. En móvil se abre como menú y añade accesos inferiores a Inicio, Ventas e Inventario, con el resto bajo **Más**. Los listados operativos y financieros cambian de tablas a tarjetas para que las acciones y los datos principales se lean sin desplazamiento horizontal. El apartado ambiental conserva tablas anchas donde hacen falta comparaciones detalladas. Ventas y documentos tributarios se consultan en secciones separadas para evitar una pantalla excesivamente larga.
 
 El tema oscuro usa superficies grises y reserva el verde pino para acentos; el tema claro mantiene la identidad natural. La interfaz respeta la preferencia del sistema, permite elegir Sistema/Claro/Oscuro y anima los cambios de forma breve. Los tokens semánticos de ambos temas viven en `:root` y `:root[data-theme="dark"]` de `src/tailwind.css`. La escala prioriza texto base de 17 px, datos tabulares de 15 px, etiquetas y metadatos de 13 px, y encabezados de 20 a 36 px. En pantallas pequeñas, las acciones principales y controles de formulario disponen de áreas táctiles de 44 px como objetivo de usabilidad; WCAG 2.1 AA exige reflujo a 320 px y contraste de 4.5:1 para texto normal (3:1 para texto grande), mientras que la guía de tamaño táctil de 44 px corresponde al criterio AAA. La preferencia de contracción de navegación se conserva en el navegador.
 
@@ -91,7 +91,7 @@ El adaptador HTTP es opcional y no viene con credenciales. Para habilitarlo, cop
 ## Almacenamiento y respaldos
 
 - Los cambios se guardan en `pyme360.sqlite3`, en la carpeta local de datos del usuario. En Windows suele ser `%LOCALAPPDATA%\Pyme360\pyme360.sqlite3`.
-- El modelo usa la tabla `typescript_model_state`, separada de la fila de la aplicación original. Ambas usan la misma base y sus respaldos, sin mezclar los datos.
+- El modelo guarda su estado en la tabla `typescript_model_state`.
 - Cada guardado aumenta una revisión. Si otra pestaña ya guardó una versión más reciente, la aplicación la carga y avisa antes de permitir seguir con la versión desactualizada.
 - El servidor crea copias diarias de SQLite y conserva las siete más recientes. Estas copias están en el mismo computador.
 - **Datos y respaldo** permite descargar y restaurar un JSON. Guarda una copia en otro medio para cubrir la pérdida del computador.
@@ -143,7 +143,7 @@ El código está agrupado por responsabilidad. Para seguir un flujo, comienza en
 - **Facturación:** `src/app/screens/ElectronicInvoicing.tsx` contiene la interfaz; `src/features/invoicing/electronic-invoicing.ts` llama a la API local; `server/electronic_invoicing.py` define el contrato, parser UBL y adaptador configurable.
 - **Sincronización:** `src/features/synchronization/` contiene el cliente local de la API central; su pantalla está en `src/app/screens/CloudSyncPanel.tsx`.
 - **Arranque y recursos:** `src/main.tsx` monta React; `src/tailwind.css`, `index.html` y `vite.config.ts` configuran la entrada web; `Iniciar Pyme360.vbs` es solo un lanzador de desarrollo.
-- **Recursos de terceros:** los lectores y licencias incluidos están en `public/vendor/`; se conservan separados de la lógica de la aplicación.
+- **Recursos de terceros:** los lectores y licencias incluidos están en `public/vendor/`; se conservan separados de la lógica de la aplicación. `xlsx.full.min.js` es SheetJS Community Edition 0.20.3, descargada de `https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js`.
 
 ## Flujos incluidos
 
@@ -229,6 +229,7 @@ Desde `typescript-model/`:
 
 ```sh
 npm test
+npm run lint
 npx tsc --noEmit
 npm run build
 ```

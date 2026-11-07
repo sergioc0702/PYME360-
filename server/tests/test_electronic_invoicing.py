@@ -356,6 +356,47 @@ class ElectronicInvoiceRouteTests(unittest.TestCase):
         self.assertIsNotNone(error)
         self.assertIn("solo puede cambiar desde un conector", error)
 
+    def test_only_unsent_drafts_can_leave_the_document_history(self):
+        draft = {"id": "draft-1", "status": "draft", "attempts": []}
+        kept = {"id": "draft-2", "status": "draft", "attempts": []}
+        previous = {
+            "schemaVersion": server_module.TYPESCRIPT_MODEL_SCHEMA_VERSION,
+            "electronicDocuments": [draft, kept],
+            "supplierInvoices": [],
+        }
+        self.assertIsNone(
+            server_module.ledger_change_error(previous, {**previous, "electronicDocuments": [kept]})
+        )
+
+        for sent in (
+            {"id": "sent-1", "status": "accepted", "attempts": []},
+            {"id": "sent-2", "status": "draft", "attempts": [{"id": "attempt-1"}]},
+            {"id": "sent-3", "status": "draft", "attempts": [], "cufe": "ABC"},
+        ):
+            with_sent = {**previous, "electronicDocuments": [sent]}
+            error = server_module.ledger_change_error(with_sent, {**with_sent, "electronicDocuments": []})
+            self.assertIn("nunca se haya enviado", error)
+
+    def test_removing_a_draft_cannot_hide_a_forged_document_or_an_edit(self):
+        draft = {"id": "draft-1", "status": "draft", "attempts": []}
+        kept = {"id": "draft-2", "status": "draft", "attempts": []}
+        previous = {
+            "schemaVersion": server_module.TYPESCRIPT_MODEL_SCHEMA_VERSION,
+            "electronicDocuments": [draft, kept],
+            "supplierInvoices": [],
+        }
+        forged = {"id": "forged-1", "status": "accepted", "attempts": []}
+        error = server_module.ledger_change_error(
+            previous, {**previous, "electronicDocuments": [kept, forged]}
+        )
+        self.assertIn("solo puede cambiar desde un conector", error)
+
+        edited = {**kept, "snapshot": {"total": 1}}
+        error = server_module.ledger_change_error(
+            previous, {**previous, "electronicDocuments": [edited]}
+        )
+        self.assertIn("se conservan como historial", error)
+
     def store_state(self, state: dict) -> None:
         with server_module.db_session() as connection:
             connection.execute(

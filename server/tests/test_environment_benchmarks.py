@@ -137,6 +137,40 @@ class BenchmarkNormalizationTests(unittest.TestCase):
         self.assertTrue(calls[1][0].endswith("/hourly"))
         self.assertEqual(calls[1][2]["MetricId"], "DemaSIN")
 
+    def test_xm_catalog_reads_the_published_metric_units_field(self):
+        catalog = {"Items": [{"ListEntities": [{
+            "MetricId": "DemaSIN",
+            "Entity": "Sistema",
+            "Type": "HourlyEntities",
+            "MetricUnits": "kWh",
+        }]}]}
+        _, unit = benchmarks._xm_catalog(catalog)
+        self.assertEqual(unit, "kWh")
+
+    def test_first_failed_refresh_stays_visible_after_reloading(self):
+        saved: dict[str, dict] = {}
+
+        def save_cache(source_id, payload, fetched_at, error):
+            saved[source_id] = {**payload, "fetchedAt": fetched_at, "lastError": error}
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "official_snapshots.csv"
+            arguments = dict(
+                state={},
+                load_cache=saved.get,
+                save_cache=save_cache,
+                snapshot_path=path,
+                unsd_fetcher=lambda: [],
+                xm_fetcher=lambda: (_ for _ in ()).throw(ValueError("catálogo cambió")),
+            )
+            benchmarks.get_benchmark_response(force_refresh=True, **arguments)
+            reloaded = benchmarks.get_benchmark_response(force_refresh=False, **arguments)
+
+        xm_status = next(source for source in reloaded["sources"] if source["id"] == "xm")
+        self.assertEqual(xm_status["status"], "error")
+        self.assertFalse(xm_status["stale"])
+        self.assertIn("catálogo cambió", xm_status["error"])
+
     def test_public_company_reference_is_scoped_and_versioned(self):
         record = benchmarks.public_company_references()[0]
         self.assertEqual(record["value"], 1.78)

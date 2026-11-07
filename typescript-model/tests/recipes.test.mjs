@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import ExcelJS from "exceljs";
 import { build } from "esbuild";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";

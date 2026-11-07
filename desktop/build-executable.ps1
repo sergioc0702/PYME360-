@@ -75,7 +75,6 @@ $packageArguments = @(
     '--collect-all', 'webview',
     '--collect-all', 'clr_loader',
     '--hidden-import', 'pythonnet',
-    '--add-data', "$($projectRoot)\web;web",
     '--add-data', "$($frontendRoot)\dist;typescript-model/dist",
     '--add-data', "$($serverRoot)\serve-local.py;server",
     '--add-data', "$($serverRoot)\electronic_invoicing.py;server",

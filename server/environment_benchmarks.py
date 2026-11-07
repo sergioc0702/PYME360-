@@ -331,7 +331,7 @@ def _xm_catalog(payload: Any) -> tuple[dict[str, Any], str]:
         metric_id = _case_value(row, "MetricId", "metricId")
         entity = _case_value(row, "Entity", "entity")
         if str(metric_id).lower() == "demasin" and str(entity).lower() == "sistema":
-            unit = _case_value(row, "Unit", "Units", "Unidad", "MeasureUnit")
+            unit = _case_value(row, "MetricUnits", "Unit", "Units", "Unidad", "MeasureUnit")
             return row, str(unit or "")
     raise ValueError("El catálogo de XM no publicó la métrica DemaSIN para Sistema.")
 
@@ -603,6 +603,7 @@ def get_benchmark_response(
             except Exception:
                 cached = None
             cached_at = str(cached.get("fetchedAt") or "") if cached else ""
+            has_data = bool(cached and cached_at)
             try:
                 cache_time = datetime.fromisoformat(cached_at.replace("Z", "+00:00")).timestamp() if cached_at else 0
             except ValueError:
@@ -632,6 +633,9 @@ def get_benchmark_response(
                             cached_at,
                             error,
                         )
+                    else:
+                        # Sin esto, el fallo de una primera consulta se perdía al recargar.
+                        save_cache(source_id, {"observations": []}, "", error)
             if isinstance(payload, list):
                 observations.extend(row for row in payload if isinstance(row, dict))
             cached_error = cached.get("lastError") if cached else None
@@ -649,15 +653,14 @@ def get_benchmark_response(
                     "url": source_url,
                     "kind": "api",
                     "status": (
-                        "stale" if cached and (error or not cache_fresh)
-                        else "ready" if cached and cache_fresh and not error
-                        else "stale" if cached and error
-                        else "error" if error
+                        "stale" if has_data and (error or not cache_fresh)
+                        else "ready" if has_data and cache_fresh and not error
+                        else "error" if error or cached_error
                         else "not_configured"
                     ),
                     "recordCount": len(payload) if isinstance(payload, list) else 0,
                     "lastUpdatedAt": fetched_at,
-                    "stale": bool(cached and (error or not cache_fresh)),
+                    "stale": bool(has_data and (error or not cache_fresh)),
                     "error": source_error,
                 }
             )

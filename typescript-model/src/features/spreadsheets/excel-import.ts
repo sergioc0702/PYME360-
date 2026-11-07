@@ -1072,7 +1072,7 @@ function parseDate(value: ImportCell | undefined): string | undefined {
   if (!text) return undefined;
   const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(text);
   if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
-  const regional = /^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})$/.exec(text);
+  const regional = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/.exec(text);
   if (regional) {
     const year = Number(regional[3].length === 2 ? `20${regional[3]}` : regional[3]);
     const day = Number(regional[1]);

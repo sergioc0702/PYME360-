@@ -69,7 +69,7 @@ export async function extractReceipt(
     /(?:factura|número de factura|no\.?)\s*[:#-]?\s*([A-Z0-9-]{4,})/i.exec(text)?.[1] ?? ""
   ).trim();
   const billedAmount = firstMatch(text, [
-    /(?:total a pagar|valor total|total factura)[^\d]{0,40}[\$\s]*([\d.,]+)/i,
+    /(?:total a pagar|valor total|total factura)[^\d]{0,40}[$\s]*([\d.,]+)/i,
   ]);
   const warnings = [...result.warnings];
   if (!provider || provider === "Proveedor no identificado")

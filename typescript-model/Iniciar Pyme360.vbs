@@ -27,9 +27,9 @@ If exitCode <> 0 Then
 End If
 
 If shell.Run("cmd.exe /d /c where py.exe >nul 2>&1", 0, True) = 0 Then
-  command = "cmd.exe /d /c py -3 """ & pythonScript & """ --app typescript-model"
+  command = "cmd.exe /d /c py -3 """ & pythonScript & """"
 ElseIf shell.Run("cmd.exe /d /c where python.exe >nul 2>&1", 0, True) = 0 Then
-  command = "cmd.exe /d /c python """ & pythonScript & """ --app typescript-model"
+  command = "cmd.exe /d /c python """ & pythonScript & """"
 Else
   MsgBox "No se encontro Python 3.11 o superior. Instala Python y vuelve a iniciar Pyme360.", vbExclamation, "Pyme360 TypeScript"
   WScript.Quit 1

@@ -18,6 +18,7 @@ import {
   type EInvoicingProviderStatus,
   type SupplierInvoicePreview,
 } from "../../features/invoicing/electronic-invoicing";
+import { isUnsentElectronicDraft } from "../../domain/business";
 import type {
   AppState,
   ElectronicDocument,
@@ -39,10 +40,12 @@ export function ElectronicInvoicingPanel({
   onSaveSupplierInvoice,
   onSaveAdjustment,
   onRefreshState,
+  onDeleteDraft,
 }: {
   state: AppState;
   canEdit: boolean;
   isAdmin: boolean;
+  onDeleteDraft: (document: ElectronicDocument) => void;
   onSaveTaxConfiguration: (config: TaxConfiguration) => Promise<boolean>;
   onSaveSupplierInvoice: (input: SupplierInvoiceInput) => Promise<boolean>;
   onSaveAdjustment: (
@@ -205,6 +208,15 @@ export function ElectronicInvoicingPanel({
             onClick={() => void submitElectronicDocument(document)}
           >
             Solicitar emisión
+          </button>
+        )}
+        {isAdmin && isUnsentElectronicDraft(document) && (
+          <button
+            className="button button-secondary button-small"
+            type="button"
+            onClick={() => onDeleteDraft(document)}
+          >
+            Eliminar borrador
           </button>
         )}
         {canEdit &&

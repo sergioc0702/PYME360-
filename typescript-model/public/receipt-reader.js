@@ -211,7 +211,8 @@
     }
     var data = await file.arrayBuffer();
     checkCancelled(token);
-    var pdf = await global.pdfjsLib.getDocument({ data: data }).promise;
+    var loadingTask = global.pdfjsLib.getDocument({ data: data });
+    var pdf = await loadingTask.promise;
     if (token) token.pdf = pdf;
     var worker = null;
     try {
@@ -278,7 +279,7 @@
       }
       if (!token || token.pdf === pdf) {
         if (token) token.pdf = null;
-        await pdf.destroy();
+        await loadingTask.destroy();
       }
     }
   }
