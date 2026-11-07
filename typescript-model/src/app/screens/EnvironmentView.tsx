@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SavingsSuggestion } from "../../domain/insights";
-import { SavingsPanel } from "./SavingsPanel";
+import { ConsumptionDashboard } from "./ConsumptionDashboard";
 import {
   loadEnvironmentalBenchmarks,
   refreshEnvironmentalBenchmarks,
@@ -11,15 +11,7 @@ import {
   targetProgress,
   type MonthlyEnvironmentalMetrics,
 } from "../../domain/environmental";
-import {
-  currentMonth,
-  formatDate,
-  formatNumber,
-  PageHeading,
-  Panel,
-  EmptyState,
-  Status,
-} from "../AppViews";
+import { currentMonth, formatDate, formatNumber, Panel, EmptyState, Status } from "../AppViews";
 import type {
   AppState,
   EnvironmentalBenchmarkResponse,
@@ -57,15 +49,15 @@ interface EnvironmentPageProps {
 }
 
 const indicatorTitles: Record<IndicatorId, string> = {
-  "energy-intensity": "Intensidad de energía",
-  "water-intensity": "Intensidad de agua",
+  "energy-intensity": "Energía por unidad",
+  "water-intensity": "Agua por unidad",
   "material-intensity": "Material por unidad",
   "recycled-material-share": "Material reciclado",
-  "waste-recovery": "Recuperación de residuos",
-  "scope-1": "Emisiones Alcance 1",
-  "scope-2": "Emisiones Alcance 2",
-  "scope-3": "Emisiones Alcance 3",
-  "data-coverage": "Cobertura de datos",
+  "waste-recovery": "Residuos aprovechados",
+  "scope-1": "CO₂ por combustibles",
+  "scope-2": "CO₂ por electricidad",
+  "scope-3": "CO₂ por compras",
+  "data-coverage": "Datos completos",
 };
 
 function valueForIndicator(
@@ -106,7 +98,7 @@ function latestDate(value: string | null): string {
     ? new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" }).format(
         new Date(value),
       )
-    : "Sin lecturas nuevas";
+    : "Sin consumos nuevos";
 }
 
 function resourceLabel(resource: ResourceReading["resource"]): string {
@@ -195,14 +187,6 @@ function periodAxisLabel(period: string): string {
     .replace(".", "");
 }
 
-function monthChange(current: number | null, previous: number | null, adjacent: boolean): string {
-  if (!adjacent || current === null || previous === null || previous === 0)
-    return "Sin comparación mensual";
-  const change = ((current - previous) / Math.abs(previous)) * 100;
-  const prefix = change > 0 ? "+" : "";
-  return `${prefix}${formatNumber(change, 1)} % frente al mes anterior`;
-}
-
 function findMissingRecentMonths(
   metrics: MonthlyEnvironmentalMetrics[],
   current: string,
@@ -246,7 +230,7 @@ interface EnvironmentalAlert {
 const trendMetricOptions: Array<{ value: TrendMetric; label: string; unit: string }> = [
   { value: "electricity", label: "Electricidad", unit: "kWh" },
   { value: "energy-intensity", label: "Electricidad por unidad", unit: "kWh/u" },
-  { value: "water", label: "Agua retirada", unit: "m³" },
+  { value: "water", label: "Agua usada", unit: "m³" },
   { value: "water-intensity", label: "Agua por unidad", unit: "m³/u" },
 ];
 
@@ -337,7 +321,7 @@ function EnvironmentalTrendChart({
     return (
       <div className="environment-trend-empty">
         <strong>{title}</strong>
-        <p>Sin lecturas disponibles para mostrar una tendencia.</p>
+        <p>Todavía no hay datos para mostrar.</p>
       </div>
     );
   }
@@ -351,7 +335,9 @@ function EnvironmentalTrendChart({
     return value === null || !Number.isFinite(value)
       ? null
       : {
-          x: padding.left + (points.length > 1 ? (index / (points.length - 1)) * chartWidth : chartWidth / 2),
+          x:
+            padding.left +
+            (points.length > 1 ? (index / (points.length - 1)) * chartWidth : chartWidth / 2),
           y: padding.top + chartHeight - (value / maximum) * chartHeight,
           period: point.period,
           value,
@@ -404,7 +390,12 @@ function EnvironmentalTrendChart({
                   y2={y}
                   className="environment-chart-gridline"
                 />
-                <text x={padding.left - 8} y={y + 4} textAnchor="end" className="environment-chart-label">
+                <text
+                  x={padding.left - 8}
+                  y={y + 4}
+                  textAnchor="end"
+                  className="environment-chart-label"
+                >
                   {formatNumber(value, 1)}
                 </text>
               </g>
@@ -448,7 +439,10 @@ function EnvironmentalTrendChart({
           )}
           {points.map((point, index) => (
             <text
-              x={padding.left + (points.length > 1 ? (index / (points.length - 1)) * chartWidth : chartWidth / 2)}
+              x={
+                padding.left +
+                (points.length > 1 ? (index / (points.length - 1)) * chartWidth : chartWidth / 2)
+              }
               y={height - 10}
               textAnchor="middle"
               className="environment-chart-label"
@@ -472,9 +466,9 @@ function EnvironmentalTrendChart({
 
 function ScopeEmissions({ period }: { period?: MonthlyEnvironmentalMetrics }) {
   const scopes = [
-    { label: "Alcance 1", value: period?.scope1KgCo2e ?? null, className: "scope-one" },
-    { label: "Alcance 2", value: period?.scope2KgCo2e ?? null, className: "scope-two" },
-    { label: "Alcance 3", value: period?.scope3KgCo2e ?? null, className: "scope-three" },
+    { label: "Combustibles", value: period?.scope1KgCo2e ?? null, className: "scope-one" },
+    { label: "Electricidad", value: period?.scope2KgCo2e ?? null, className: "scope-two" },
+    { label: "Compras y residuos", value: period?.scope3KgCo2e ?? null, className: "scope-three" },
   ];
   const available = scopes.flatMap((scope) =>
     scope.value !== null && Number.isFinite(scope.value) ? [scope.value] : [],
@@ -539,8 +533,8 @@ function ScopeEmissions({ period }: { period?: MonthlyEnvironmentalMetrics }) {
       </svg>
       {!available.length && (
         <p className="environment-scope-note">
-          Registra actividades y factores compatibles para calcular emisiones. Los datos faltantes no
-          se interpretan como cero.
+          Registra actividades y factores compatibles para calcular emisiones. Los datos faltantes
+          no se interpretan como cero.
         </p>
       )}
     </div>
@@ -728,7 +722,7 @@ function BenchmarkPanel({ canRefresh }: { canRefresh: boolean }) {
 
   return (
     <Panel
-      title="Referencias externas"
+      title="Comparar con otras empresas"
       description="Una vista breve de las referencias más útiles; el histórico completo queda bajo demanda."
       action={
         canRefresh ? (
@@ -745,9 +739,8 @@ function BenchmarkPanel({ canRefresh }: { canRefresh: boolean }) {
       <div className="panel-body">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="field-hint m-0">
-            Perfil {response?.profile.countryCode ?? "CO"} ·{" "}
-            {response?.profile.region ?? "Antioquia"} · CIIU{" "}
-            {response?.profile.sectorCode ?? "1104"}
+            Perfil {response?.profile.countryCode ?? "CO"} · {response?.profile.region ?? "Boyacá"}{" "}
+            · CIIU {response?.profile.sectorCode ?? "1104"}
             <span className="mx-1.5 text-line">·</span>
             Supuesto: {formatNumber(response?.profile.assumedMonthlyOutput ?? 100000)} L/mes; no se
             usa como producción medida.
@@ -993,7 +986,7 @@ function LegacyRecords({ records }: { records: EnvironmentalRecord[] }) {
     <details className="legacy-environment-records">
       <summary>Registros mensuales anteriores a la migración ({records.length})</summary>
       <p className="field-hint">
-        Se conservan como referencia. Solo los valores mayores que cero se migraron a lecturas; los
+        Se conservan como referencia. Solo los valores mayores que cero se pasaron a consumos; los
         ceros históricos se interpretan como datos no disponibles.
       </p>
       {records.length ? (
@@ -1089,7 +1082,7 @@ function TargetList({
               {target.approvedAt && (
                 <small>
                   {progress === null
-                    ? "Sin lectura comparable"
+                    ? "Sin dato para comparar"
                     : `${formatNumber(progress, 0)} % de avance estimado`}
                 </small>
               )}
@@ -1133,48 +1126,44 @@ function ActionList({
 }) {
   if (!actions.length)
     return (
-      <EmptyState>
-        Registra una acción con responsable y fecha límite para convertir un indicador en una mejora
-        operativa.
-      </EmptyState>
+      <p className="screen-empty">Todavía no tienes medidas. Agrega una con responsable y fecha.</p>
     );
   return (
-    <div className="environment-list">
+    <ul className="task-list">
       {actions.map((action) => (
-        <article className="environment-list-item" key={action.id}>
-          <div className="environment-list-main">
+        <li key={action.id}>
+          <div>
             <strong>{action.title}</strong>
             <span>
-              {indicatorTitles[action.indicatorId]} · Responsable: {action.owner} · Vence:{" "}
+              {action.status === "completed" ? "Hecha" : "Pendiente"} · {action.owner} · hasta el{" "}
               {formatDate(action.dueDate)}
             </span>
-            {action.notes && <span>{action.notes}</span>}
+            {action.notes && <span className="consumo-action-note">{action.notes}</span>}
           </div>
-          <div className="table-actions">
-            <Status tone={action.status === "completed" ? "good" : "warning"}>
-              {action.status === "completed" ? "Completada" : "Abierta"}
-            </Status>
+          <div className="row-actions">
             {canEdit && (
               <button
-                className="button button-secondary button-small"
+                className="action-secondary"
+                type="button"
                 onClick={() => onToggle(action.id)}
               >
-                {action.status === "completed" ? "Reabrir" : "Completar"}
+                {action.status === "completed" ? "Reabrir" : "Marcar hecha"}
               </button>
             )}
             {canDelete && (
               <button
                 className="icon-button"
+                type="button"
                 onClick={() => onDelete(action.id)}
-                aria-label="Eliminar acción"
+                aria-label={`Eliminar ${action.title}`}
               >
                 ×
               </button>
             )}
           </div>
-        </article>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
@@ -1226,17 +1215,21 @@ export function EnvironmentPage({
   const selectedTrendMetric = trendMetricOptions.find((option) => option.value === trendMetric)!;
   const trendPoints: TrendPoint[] = trendPeriodSlots.map((period) => ({
     period,
-    value: valueForTrendMetric(metrics.find((item) => item.period === period), trendMetric),
+    value: valueForTrendMetric(
+      metrics.find((item) => item.period === period),
+      trendMetric,
+    ),
   }));
   const trendTarget = getApprovedTrendTarget(state.indicatorTargets, trendMetric);
   const trendPeriodLabel = `${trendMonths} meses · ${periodTitle(trendStartPeriod)} – ${periodTitle(trendEndPeriod)}`;
   const sortedReadings = state.resourceReadings
     .slice()
     .sort(
-      (a, b) =>
-        b.periodEnd.localeCompare(a.periodEnd) || b.capturedAt.localeCompare(a.capturedAt),
+      (a, b) => b.periodEnd.localeCompare(a.periodEnd) || b.capturedAt.localeCompare(a.capturedAt),
     );
-  const readingPeriods = [...new Set(sortedReadings.map((reading) => reading.periodEnd.slice(0, 7)))];
+  const readingPeriods = [
+    ...new Set(sortedReadings.map((reading) => reading.periodEnd.slice(0, 7))),
+  ];
   const filteredReadings = sortedReadings.filter(
     (reading) =>
       (readingResource === "all" || reading.resource === readingResource) &&
@@ -1258,7 +1251,7 @@ export function EnvironmentPage({
   const targetCurrent = latest;
   const factorButton = isAdmin ? (
     <button className="button button-secondary button-small" onClick={onNewFactor}>
-      Agregar factor
+      Agregar valor
     </button>
   ) : undefined;
   const factorActivities = {
@@ -1268,42 +1261,6 @@ export function EnvironmentPage({
     waste: "Residuos",
     transport: "Transporte",
   };
-  const metricCards: Array<{ label: string; value: string; note: string }> = [
-    {
-      label: "Electricidad",
-      value: display(latest?.electricityKwh ?? null, "kWh"),
-      note: latest
-        ? monthChange(
-            latest.electricityKwh,
-            previous?.electricityKwh ?? null,
-            isAdjacentMonth(latest.period, previous?.period),
-          )
-        : "Sin lecturas",
-    },
-    {
-      label: "Agua retirada",
-      value: display(latest?.waterWithdrawalM3 ?? null, "m³"),
-      note: latest
-        ? latest.waterConsumptionM3 === null
-          ? "Agua neta no disponible sin retirada y descarga compatibles"
-          : `Agua neta ${display(latest.waterConsumptionM3, "m³")}`
-        : "Sin lecturas",
-    },
-    {
-      label: "Intensidad por unidad",
-      value: display(latest?.energyPerUnit ?? null, "kWh/u"),
-      note: latest
-        ? `Agua neta ${display(latest.waterPerUnit, "m³/u", 3)} · producción del periodo`
-        : "Requiere lecturas y producción del periodo",
-    },
-    {
-      label: "Recuperación de residuos",
-      value: display(latest?.wasteRecoveryPercent ?? null, "%", 1),
-      note: latest
-        ? `${display(latest.wasteRecoveredKg, "kg")} recuperados de ${display(latest.wasteGeneratedKg, "kg")} generados`
-        : "Sin pesajes registrados",
-    },
-  ];
   const environmentalAlerts: EnvironmentalAlert[] = [];
   if (
     latest &&
@@ -1314,10 +1271,10 @@ export function EnvironmentPage({
     environmentalAlerts.push({
       id: "water-balance",
       category: "Revisar medición",
-      title: "La descarga supera el agua retirada",
+      title: "Sale más agua de la que entra",
       detail: `Periodo ${latest.period}. El consumo neto queda no disponible; revisa periodos y medidores.`,
       resource: "water",
-      actionLabel: "Revisar lecturas",
+      actionLabel: "Revisar consumos",
       action: "readings",
     });
   }
@@ -1328,7 +1285,7 @@ export function EnvironmentPage({
       title: "Los residuos recuperados superan los generados",
       detail: `Periodo ${latest.period}. Revisa unidades, pesajes y periodos.`,
       resource: "waste",
-      actionLabel: "Revisar lecturas",
+      actionLabel: "Revisar consumos",
       action: "readings",
     });
   }
@@ -1348,9 +1305,9 @@ export function EnvironmentPage({
     environmentalAlerts.push({
       id: "intensity-increase",
       category: "Variación mensual",
-      title: "Aumentó la intensidad de energía o agua",
+      title: "Subió el gasto de energía o agua por unidad",
       detail: `Más de 10 % frente al periodo anterior (${previous.period} → ${latest.period}). Verifica mezcla de productos, producción y calidad de las lecturas.`,
-      actionLabel: "Revisar lecturas",
+      actionLabel: "Revisar consumos",
       action: "readings",
     });
   }
@@ -1358,9 +1315,9 @@ export function EnvironmentPage({
     environmentalAlerts.push({
       id: "missing-months",
       category: "Dato faltante",
-      title: "Faltan lecturas recientes",
+      title: "Faltan consumos recientes",
       detail: `${recentMonthsMissing.map(periodTitle).join(", ")}. Las comparaciones pueden estar incompletas.`,
-      actionLabel: canEdit ? "Registrar lectura" : "Ver lecturas",
+      actionLabel: canEdit ? "Registrar consumo" : "Ver consumos",
       action: canEdit ? "register" : "readings",
     });
   }
@@ -1383,386 +1340,39 @@ export function EnvironmentPage({
   }
   return (
     <>
-      <PageHeading
-        title="Impacto ambiental"
-        description="Lecturas trazables, indicadores por producción y acciones de reducción."
-        action={canEdit ? () => onEditReading() : undefined}
-        actionLabel="Registrar lectura"
-      />
-      <div className="environment-data-summary" aria-label="Estado de los datos ambientales">
-        <div className="environment-data-summary-item">
-          <span>Cobertura de datos{latest ? ` · ${periodTitle(latest.period)}` : ""}</span>
-          <strong>{latest ? display(latest.dataCoveragePercent, "%", 0) : "No disponible"}</strong>
-        </div>
-        <div className="environment-data-summary-item">
-          <span>Última lectura capturada</span>
-          <strong>{latestDate(latestDateValue)}</strong>
-        </div>
-      </div>
-      <div className="notice">
-        Los datos se actualizan al registrar una lectura o confirmar un recibo procesado en este
-        dispositivo. Las referencias públicas se actualizan desde sus fuentes al solicitarlo; no
-        representan telemetría ni el consumo real de esta planta.
-      </div>
-
-      <SavingsPanel
+      <ConsumptionDashboard
         state={state}
         canEdit={canEdit}
+        onNewReading={() => onEditReading()}
+        onImport={onImport}
         onAddAction={onAddSuggestion}
+        onNewAction={onNewAction}
         onError={onError}
-      />
-
-      <Panel
-        title="Fuente de consumo"
-        description="Importa el recibo descargado desde el portal del proveedor."
-        action={
-          isAdmin ? (
-            <button className="button button-secondary button-small" onClick={onConfigure}>
-              Configurar
-            </button>
-          ) : undefined
-        }
-      >
-        <div className="panel-body environment-source-row">
-          <div>
-            <strong>{state.environmentalConfig?.providerName ?? "Enel Colombia"}</strong>
-            <span>
-              {state.environmentalConfig?.accountNumber
-                ? `Cuenta ${state.environmentalConfig.accountNumber}`
-                : "Sin número de cuenta guardado"}
-              {state.environmentalConfig?.businessUnit
-                ? ` · ${state.environmentalConfig.businessUnit}`
-                : ""}
-            </span>
-            <span>
-              Ubicación para factores de emisión:{" "}
-              {state.environmentalConfig?.geography ?? "Colombia SIN"}
-            </span>
-          </div>
-          <div>
-            <Status tone="warning">Recibos manuales</Status>
-            <small>Último dato: {latestDate(latestDateValue)}</small>
-          </div>
-        </div>
-        {canEdit && (
-          <details className="environment-secondary-details environment-receipt-details">
-            <summary>Capturar desde un recibo</summary>
-            <div className="panel-body environment-source-actions">
-              <label className="button button-secondary">
-                Importar recibo PDF/JPG/PNG
-                <input
-                  type="file"
-                  hidden
-                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                  onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
-                    if (file) onImport(file);
-                    event.currentTarget.value = "";
-                  }}
-                />
-              </label>
-              <span className="field-hint">
-                La vista previa se procesa localmente; no se guarda el archivo ni el texto OCR.
-              </span>
-            </div>
-          </details>
-        )}
-      </Panel>
-
-      <Panel
-        title="Alertas ambientales"
-        description="Revisa primero inconsistencias y variaciones; después completa los datos faltantes."
-        action={
-          <Status tone={environmentalAlerts.length ? "warning" : periodsWithData.length ? "good" : ""}>
-            {periodsWithData.length
-              ? environmentalAlerts.length
-                ? `${environmentalAlerts.length} ${environmentalAlerts.length === 1 ? "pendiente" : "pendientes"}`
-                : "Sin alertas"
-              : "Sin datos suficientes"}
-          </Status>
-        }
-      >
-        {periodsWithData.length === 0 ? (
-          <div className="environment-alert-empty">
-            <span aria-hidden="true">i</span>
-            <p>Aún no hay datos suficientes para generar alertas. Registra una lectura para iniciar el seguimiento.</p>
-            {canEdit && (
-              <button className="button button-secondary button-small" onClick={() => onEditReading()}>
-                Registrar lectura
-              </button>
-            )}
-          </div>
-        ) : environmentalAlerts.length ? (
-          <div className="environment-alert-list" role="list" aria-label="Alertas por prioridad">
-            {environmentalAlerts.map((alert) => (
-              <article className="environment-alert-item" role="listitem" key={alert.id}>
-                <div className="environment-alert-copy">
-                  <Status tone="warning">{alert.category}</Status>
-                  <strong>{alert.title}</strong>
-                  <p>{alert.detail}</p>
-                </div>
-                <button
-                  className="button button-secondary button-small environment-alert-action"
-                  type="button"
-                  onClick={() => handleEnvironmentalAlert(alert)}
-                >
-                  {alert.actionLabel}
-                </button>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="environment-alert-empty is-clear" role="status">
-            <span aria-hidden="true">✓</span>
-            <p>No hay alertas en los periodos con datos registrados.</p>
-          </div>
-        )}
-      </Panel>
-
-      <div className="metric-grid environment-kpi-grid">
-        {metricCards.map((metric) => (
-          <article className="metric-card" key={metric.label}>
-            <div className="metric-label">{metric.label}</div>
-            <div className="metric-value">{metric.value}</div>
-            <div className="metric-note">{metric.note}</div>
-          </article>
-        ))}
-      </div>
-
-      <div className="environment-visual-summary">
-        <Panel
-          title="Tendencias mensuales"
-          description="Compara consumos absolutos e intensidades. La línea de meta solo aparece con una línea base aprobada."
-          action={
-            <div className="environment-trend-controls">
-              <label className="environment-trend-select">
-                <span>Métrica</span>
-                <select
-                  value={trendMetric}
-                  onChange={(event) => setTrendMetric(event.currentTarget.value as TrendMetric)}
-                >
-                  {trendMetricOptions.map((option) => (
-                    <option value={option.value} key={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="environment-period-controls" role="group" aria-label="Ventana de tendencia">
-                {([3, 6, 12] as const).map((months) => (
-                  <button
-                    className={trendMonths === months ? "active" : ""}
-                    type="button"
-                    aria-pressed={trendMonths === months}
-                    key={months}
-                    onClick={() => setTrendMonths(months)}
-                  >
-                    {months} meses
-                  </button>
-                ))}
-              </div>
-            </div>
-          }
-        >
-          <div className="environment-trend-grid">
-            <EnvironmentalTrendChart
-              points={trendPoints}
-              title={selectedTrendMetric.label}
-              unit={selectedTrendMetric.unit}
-              periodLabel={trendPeriodLabel}
-              target={trendTarget}
-            />
-            {(trendMetric === "energy-intensity" || trendMetric === "water-intensity") &&
-              !trendTarget && (
-                <p className="environment-trend-target-unavailable">
-                  No hay una meta aprobada para esta intensidad. Aprueba una línea base en “Metas graduales” para mostrarla aquí.
-                </p>
-              )}
-          </div>
-        </Panel>
-        <Panel
-          title="Emisiones"
-          description="Por alcance, en el último periodo con lecturas."
-        >
-          <div className="panel-body">
-            <ScopeEmissions period={latest} />
-          </div>
-        </Panel>
-      </div>
-
-      <details className="environment-disclosure">
-        <summary>Explorar historial e indicadores · {metrics.length} periodo(s)</summary>
-        <div className="environment-disclosure-content">
-      <Panel
-        title="Historial e indicadores mensuales"
-        description="Se muestran cantidades absolutas e intensidades; emisiones sin factor compatible quedan como no disponibles."
-      >
-        {metrics.length ? (
-          <>
-            <div className="table-wrap desktop-record-table">
-              <table className="environment-metrics-table">
-                <thead>
-                  <tr>
-                    <th>Mes</th>
-                    <th>Energía kWh</th>
-                    <th>kWh/unidad</th>
-                    <th>Agua retirada m³</th>
-                    <th>Agua neta m³</th>
-                    <th>m³/unidad</th>
-                    <th>Material consumido kg</th>
-                    <th>Material kg/unidad</th>
-                    <th>Reciclado %</th>
-                    <th>Residuos kg</th>
-                    <th>Recuperado %</th>
-                    <th>GEI A1/A2/A3 kg CO₂e</th>
-                    <th>Cobertura</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {metrics
-                    .slice()
-                    .reverse()
-                    .map((row) => (
-                      <tr key={row.period}>
-                        <td>{row.period}</td>
-                        <td>{display(row.electricityKwh)}</td>
-                        <td>{display(row.energyPerUnit)}</td>
-                        <td>{display(row.waterWithdrawalM3, "", 3)}</td>
-                        <td>{display(row.waterConsumptionM3, "", 3)}</td>
-                        <td>{display(row.waterPerUnit, "", 3)}</td>
-                        <td>{display(row.materialConsumedKg)}</td>
-                        <td>{display(row.materialPerUnit)}</td>
-                        <td>{display(row.recycledMaterialPercent, "", 1)}</td>
-                        <td>{display(row.wasteGeneratedKg)}</td>
-                        <td>{display(row.wasteRecoveryPercent, "", 1)}</td>
-                        <td>
-                          {display(row.scope1KgCo2e)} / {display(row.scope2KgCo2e)} /{" "}
-                          {display(row.scope3KgCo2e)}
-                        </td>
-                        <td>{display(row.dataCoveragePercent, "%", 0)}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mobile-record-list">
-              {metrics
-                .slice()
-                .reverse()
-                .map((row) => (
-                  <article className="mobile-record-card" key={row.period}>
-                    <div className="mobile-record-card-heading">
-                      <div className="mobile-record-main">
-                        <strong>{row.period}</strong>
-                        <span>Indicadores ambientales del período</span>
-                      </div>
-                      <Status tone={row.dataCoveragePercent >= 80 ? "good" : "warning"}>
-                        {display(row.dataCoveragePercent, "%", 0)} datos
-                      </Status>
+        alerts={
+          environmentalAlerts.length > 0 && (
+            <section aria-labelledby="consumo-alertas">
+              <h2 id="consumo-alertas">Revisa estos datos</h2>
+              <ul className="task-list">
+                {environmentalAlerts.map((alert) => (
+                  <li key={alert.id}>
+                    <div>
+                      <strong>{alert.title}</strong>
+                      <span>{alert.detail}</span>
                     </div>
-                    <div className="mobile-record-stat-grid">
-                      <div>
-                        <span>Electricidad</span>
-                        <strong>{display(row.electricityKwh, "kWh")}</strong>
-                      </div>
-                      <div>
-                        <span>Agua retirada</span>
-                        <strong>{display(row.waterWithdrawalM3, "m³", 3)}</strong>
-                      </div>
-                    </div>
-                    <details className="mobile-metric-details">
-                      <summary>Ver todos los indicadores</summary>
-                      <div className="mobile-record-stat-grid">
-                        <div>
-                          <span>Energía por unidad</span>
-                          <strong>{display(row.energyPerUnit, "kWh/u")}</strong>
-                        </div>
-                        <div>
-                          <span>Agua neta</span>
-                          <strong>{display(row.waterConsumptionM3, "m³", 3)}</strong>
-                        </div>
-                        <div>
-                          <span>Agua por unidad</span>
-                          <strong>{display(row.waterPerUnit, "m³/u", 3)}</strong>
-                        </div>
-                        <div>
-                          <span>Material consumido</span>
-                          <strong>{display(row.materialConsumedKg, "kg")}</strong>
-                        </div>
-                        <div>
-                          <span>Material por unidad</span>
-                          <strong>{display(row.materialPerUnit, "kg/u")}</strong>
-                        </div>
-                        <div>
-                          <span>Material reciclado</span>
-                          <strong>{display(row.recycledMaterialPercent, "%", 1)}</strong>
-                        </div>
-                        <div>
-                          <span>Residuos</span>
-                          <strong>{display(row.wasteGeneratedKg, "kg")}</strong>
-                        </div>
-                        <div>
-                          <span>Residuos recuperados</span>
-                          <strong>{display(row.wasteRecoveryPercent, "%", 1)}</strong>
-                        </div>
-                        <div className="col-span-2">
-                          <span>GEI Alcances 1 / 2 / 3</span>
-                          <strong>
-                            {display(row.scope1KgCo2e)} / {display(row.scope2KgCo2e)} /{" "}
-                            {display(row.scope3KgCo2e)} kg CO₂e
-                          </strong>
-                        </div>
-                      </div>
-                    </details>
-                  </article>
+                    <button
+                      className="action-secondary"
+                      type="button"
+                      onClick={() => handleEnvironmentalAlert(alert)}
+                    >
+                      {alert.actionLabel}
+                    </button>
+                  </li>
                 ))}
-            </div>
-          </>
-        ) : (
-          <EmptyState>
-            No hay lecturas aún. Registra una lectura manual o confirma un recibo para iniciar la
-            línea base.
-          </EmptyState>
-        )}
-      </Panel>
-        </div>
-      </details>
-
-      <div className="environment-planning-grid">
-      <Panel
-        title="Metas graduales"
-        description="Las metas son editables. Aprueba la línea base cuando haya datos comparables; no se calcula avance mientras sea provisional."
-        action={
-          isAdmin ? (
-            <button className="button button-secondary button-small" onClick={onNewTarget}>
-              ＋ Nueva meta
-            </button>
-          ) : undefined
+              </ul>
+            </section>
+          )
         }
-      >
-        <div className="panel-body">
-          <TargetList
-            state={state}
-            current={targetCurrent}
-            onEdit={onEditTarget}
-            onDelete={onDeleteTarget}
-            canEdit={isAdmin}
-          />
-        </div>
-      </Panel>
-
-      <Panel
-        title="Acciones de mejora"
-        description="Asigna una intervención a una persona y verifica su fecha límite."
-        action={
-          canEdit ? (
-            <button className="button button-secondary button-small" onClick={onNewAction}>
-              ＋ Registrar acción
-            </button>
-          ) : undefined
-        }
-      >
-        <div className="panel-body">
+        plan={
           <ActionList
             actions={state.environmentalActions}
             onToggle={onToggleAction}
@@ -1770,380 +1380,670 @@ export function EnvironmentPage({
             canEdit={canEdit}
             canDelete={canDelete}
           />
-        </div>
-      </Panel>
-      </div>
+        }
+      />
 
-      <BenchmarkPanel canRefresh={canEdit} />
+      <h2 className="screen-more-title">Más detalle</h2>
 
       <details className="environment-disclosure">
-        <summary>Factores de emisión · {state.emissionFactors.length}</summary>
+        <summary>Tu proveedor y tus recibos</summary>
         <div className="environment-disclosure-content">
-      <Panel
-        title="Factores de emisión"
-        description="Factores explícitos y versionados. Solo se aplican al año, actividad, unidad y ubicación que coinciden."
-        action={factorButton}
-      >
-        {state.emissionFactors.length ? (
-          <>
-            <div className="table-wrap desktop-record-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Alcance</th>
-                    <th>Actividad</th>
-                    <th>Factor</th>
-                    <th>Ubicación</th>
-                    <th>Año</th>
-                    <th>Versión y método</th>
-                    <th>Fuente</th>
-                    {isAdmin && <th>Acciones</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.emissionFactors.map((factor) => (
-                    <tr key={factor.id}>
-                      <td>{factor.scope}</td>
-                      <td>{factorActivities[factor.activity]}</td>
-                      <td>{formatFactor(factor)}</td>
-                      <td>{factor.geography}</td>
-                      <td>{factor.year}</td>
-                      <td>
-                        {factor.version} · {factor.method}
-                      </td>
-                      <td>{factor.source}</td>
-                      {isAdmin && (
-                        <td>
-                          <div className="table-actions">
-                            <button
-                              className="button button-secondary button-small"
-                              onClick={() => onEditFactor(factor)}
-                            >
-                              Editar
-                            </button>
-                            {factor.id !== "factor-upme-sin-2024" && (
-                              <button
-                                className="icon-button"
-                                onClick={() => onDeleteFactor(factor.id)}
-                                aria-label="Eliminar factor"
-                              >
-                                ×
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <Panel
+            title="Tu proveedor"
+            description="Sube tus recibos con el botón de arriba."
+            action={
+              isAdmin ? (
+                <button className="button button-secondary button-small" onClick={onConfigure}>
+                  Configurar
+                </button>
+              ) : undefined
+            }
+          >
+            <div className="panel-body environment-source-row">
+              <div>
+                <strong>{state.environmentalConfig?.providerName ?? "EBSA"}</strong>
+                <span>
+                  {state.environmentalConfig?.accountNumber
+                    ? `Cuenta ${state.environmentalConfig.accountNumber}`
+                    : "Sin número de cuenta guardado"}
+                  {state.environmentalConfig?.businessUnit
+                    ? ` · ${state.environmentalConfig.businessUnit}`
+                    : ""}
+                </span>
+                <span>
+                  Zona usada para calcular el CO₂:{" "}
+                  {state.environmentalConfig?.geography ?? "Colombia SIN"}
+                </span>
+              </div>
+              <div>
+                <small>Último dato: {latestDate(latestDateValue)}</small>
+              </div>
             </div>
-            <div className="mobile-record-list">
-              {state.emissionFactors.map((factor) => (
-                <article className="mobile-record-card" key={factor.id}>
-                  <div className="mobile-record-card-heading">
-                    <div className="mobile-record-main">
-                      <strong>{factorActivities[factor.activity]}</strong>
-                      <span>
-                        {factor.scope} · {factor.geography}
-                      </span>
-                    </div>
-                    <Status>{factor.year}</Status>
-                  </div>
-                  <div className="mobile-record-stat-grid">
-                    <div>
-                      <span>Factor</span>
-                      <strong>{formatFactor(factor)}</strong>
-                    </div>
-                    <div>
-                      <span>Versión</span>
-                      <strong>{factor.version}</strong>
-                    </div>
-                  </div>
-                  <p className="mobile-record-description">
-                    {factor.method} · {factor.source}
-                  </p>
-                  {isAdmin && (
-                    <div className="mobile-record-actions">
-                      <button
-                        className="button button-secondary"
-                        onClick={() => onEditFactor(factor)}
-                      >
-                        Editar
-                      </button>
-                      {factor.id !== "factor-upme-sin-2024" && (
-                        <button
-                          className="button button-danger"
-                          onClick={() => onDeleteFactor(factor.id)}
-                        >
-                          Eliminar
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </article>
-              ))}
-            </div>
-          </>
-        ) : (
-          <EmptyState>
-            Agrega un factor con fuente y versión para poder calcular emisiones.
-          </EmptyState>
-        )}
-        <div className="panel-body">
-          <p className="field-hint">
-            El factor UPME de 0,22 kg CO₂e/kWh corresponde al SIN para el inventario de 2024; no se
-            extrapola automáticamente a otros años. Las categorías sin factor compatible se muestran
-            como —.
-          </p>
+          </Panel>
         </div>
-      </Panel>
+      </details>
+
+      <details className="environment-disclosure">
+        <summary>Cómo cambia cada dato</summary>
+        <div className="environment-disclosure-content">
+          <div className="environment-visual-summary">
+            <Panel
+              title="Cómo cambia cada dato"
+              description="Elige un dato y cuántos meses ver."
+              action={
+                <div className="environment-trend-controls">
+                  <label className="environment-trend-select">
+                    <span>Métrica</span>
+                    <select
+                      value={trendMetric}
+                      onChange={(event) => setTrendMetric(event.currentTarget.value as TrendMetric)}
+                    >
+                      {trendMetricOptions.map((option) => (
+                        <option value={option.value} key={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div
+                    className="environment-period-controls"
+                    role="group"
+                    aria-label="Ventana de tendencia"
+                  >
+                    {([3, 6, 12] as const).map((months) => (
+                      <button
+                        className={trendMonths === months ? "active" : ""}
+                        type="button"
+                        aria-pressed={trendMonths === months}
+                        key={months}
+                        onClick={() => setTrendMonths(months)}
+                      >
+                        {months} meses
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              }
+            >
+              <div className="environment-trend-grid">
+                <EnvironmentalTrendChart
+                  points={trendPoints}
+                  title={selectedTrendMetric.label}
+                  unit={selectedTrendMetric.unit}
+                  periodLabel={trendPeriodLabel}
+                  target={trendTarget}
+                />
+                {(trendMetric === "energy-intensity" || trendMetric === "water-intensity") &&
+                  !trendTarget && (
+                    <p className="environment-trend-target-unavailable">
+                      No hay una meta aprobada para este dato. Aprueba una línea base en “Metas
+                      graduales” para mostrarla aquí.
+                    </p>
+                  )}
+              </div>
+            </Panel>
+            <Panel
+              title="Huella de carbono"
+              description="Del último mes con datos, según de dónde viene."
+            >
+              <div className="panel-body">
+                <ScopeEmissions period={latest} />
+              </div>
+            </Panel>
+          </div>
+        </div>
+      </details>
+
+      <details className="environment-disclosure">
+        <summary>Todos los datos por mes · {metrics.length}</summary>
+        <div className="environment-disclosure-content">
+          <Panel
+            title="Todos los datos por mes"
+            description="Lo que no se puede calcular aparece como —."
+          >
+            {metrics.length ? (
+              <>
+                <div className="table-wrap desktop-record-table">
+                  <table className="environment-metrics-table">
+                    <thead>
+                      <tr>
+                        <th>Mes</th>
+                        <th>Energía kWh</th>
+                        <th>kWh/unidad</th>
+                        <th>Agua usada m³</th>
+                        <th>Agua neta m³</th>
+                        <th>m³/unidad</th>
+                        <th>Material consumido kg</th>
+                        <th>Material kg/unidad</th>
+                        <th>Reciclado %</th>
+                        <th>Residuos kg</th>
+                        <th>Recuperado %</th>
+                        <th>CO₂ kg (combustibles / electricidad / compras)</th>
+                        <th>Datos completos</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics
+                        .slice()
+                        .reverse()
+                        .map((row) => (
+                          <tr key={row.period}>
+                            <td>{row.period}</td>
+                            <td>{display(row.electricityKwh)}</td>
+                            <td>{display(row.energyPerUnit)}</td>
+                            <td>{display(row.waterWithdrawalM3, "", 3)}</td>
+                            <td>{display(row.waterConsumptionM3, "", 3)}</td>
+                            <td>{display(row.waterPerUnit, "", 3)}</td>
+                            <td>{display(row.materialConsumedKg)}</td>
+                            <td>{display(row.materialPerUnit)}</td>
+                            <td>{display(row.recycledMaterialPercent, "", 1)}</td>
+                            <td>{display(row.wasteGeneratedKg)}</td>
+                            <td>{display(row.wasteRecoveryPercent, "", 1)}</td>
+                            <td>
+                              {display(row.scope1KgCo2e)} / {display(row.scope2KgCo2e)} /{" "}
+                              {display(row.scope3KgCo2e)}
+                            </td>
+                            <td>{display(row.dataCoveragePercent, "%", 0)}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mobile-record-list">
+                  {metrics
+                    .slice()
+                    .reverse()
+                    .map((row) => (
+                      <article className="mobile-record-card" key={row.period}>
+                        <div className="mobile-record-card-heading">
+                          <div className="mobile-record-main">
+                            <strong>{row.period}</strong>
+                            <span>Datos del mes</span>
+                          </div>
+                          <Status tone={row.dataCoveragePercent >= 80 ? "good" : "warning"}>
+                            {display(row.dataCoveragePercent, "%", 0)} datos
+                          </Status>
+                        </div>
+                        <div className="mobile-record-stat-grid">
+                          <div>
+                            <span>Electricidad</span>
+                            <strong>{display(row.electricityKwh, "kWh")}</strong>
+                          </div>
+                          <div>
+                            <span>Agua usada</span>
+                            <strong>{display(row.waterWithdrawalM3, "m³", 3)}</strong>
+                          </div>
+                        </div>
+                        <details className="mobile-metric-details">
+                          <summary>Ver todos los indicadores</summary>
+                          <div className="mobile-record-stat-grid">
+                            <div>
+                              <span>Energía por unidad</span>
+                              <strong>{display(row.energyPerUnit, "kWh/u")}</strong>
+                            </div>
+                            <div>
+                              <span>Agua neta</span>
+                              <strong>{display(row.waterConsumptionM3, "m³", 3)}</strong>
+                            </div>
+                            <div>
+                              <span>Agua por unidad</span>
+                              <strong>{display(row.waterPerUnit, "m³/u", 3)}</strong>
+                            </div>
+                            <div>
+                              <span>Material consumido</span>
+                              <strong>{display(row.materialConsumedKg, "kg")}</strong>
+                            </div>
+                            <div>
+                              <span>Material por unidad</span>
+                              <strong>{display(row.materialPerUnit, "kg/u")}</strong>
+                            </div>
+                            <div>
+                              <span>Material reciclado</span>
+                              <strong>{display(row.recycledMaterialPercent, "%", 1)}</strong>
+                            </div>
+                            <div>
+                              <span>Residuos</span>
+                              <strong>{display(row.wasteGeneratedKg, "kg")}</strong>
+                            </div>
+                            <div>
+                              <span>Residuos recuperados</span>
+                              <strong>{display(row.wasteRecoveryPercent, "%", 1)}</strong>
+                            </div>
+                            <div className="col-span-2">
+                              <span>CO₂ (combustibles / electricidad / compras)</span>
+                              <strong>
+                                {display(row.scope1KgCo2e)} / {display(row.scope2KgCo2e)} /{" "}
+                                {display(row.scope3KgCo2e)} kg CO₂e
+                              </strong>
+                            </div>
+                          </div>
+                        </details>
+                      </article>
+                    ))}
+                </div>
+              </>
+            ) : (
+              <EmptyState>Todavía no hay consumos. Registra uno o sube un recibo.</EmptyState>
+            )}
+          </Panel>
+        </div>
+      </details>
+
+      <details className="environment-disclosure">
+        <summary>Metas</summary>
+        <div className="environment-disclosure-content">
+          <Panel
+            title="Metas"
+            description="Metas de ahorro a 6, 18 y 36 meses."
+            action={
+              isAdmin ? (
+                <button className="button button-secondary button-small" onClick={onNewTarget}>
+                  ＋ Nueva meta
+                </button>
+              ) : undefined
+            }
+          >
+            <div className="panel-body">
+              <TargetList
+                state={state}
+                current={targetCurrent}
+                onEdit={onEditTarget}
+                onDelete={onDeleteTarget}
+                canEdit={isAdmin}
+              />
+            </div>
+          </Panel>
+        </div>
+      </details>
+
+      <details className="environment-disclosure">
+        <summary>Comparar con otras empresas</summary>
+        <div className="environment-disclosure-content">
+          <BenchmarkPanel canRefresh={canEdit} />
+        </div>
+      </details>
+
+      <details className="environment-disclosure">
+        <summary>Valores para calcular el CO₂ · {state.emissionFactors.length}</summary>
+        <div className="environment-disclosure-content">
+          <Panel
+            title="Valores para calcular el CO₂"
+            description="Cada mes usa el valor más reciente disponible hasta ese año."
+            action={factorButton}
+          >
+            {state.emissionFactors.length ? (
+              <>
+                <div className="table-wrap desktop-record-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Tipo</th>
+                        <th>Actividad</th>
+                        <th>Factor</th>
+                        <th>Ubicación</th>
+                        <th>Año</th>
+                        <th>Versión y método</th>
+                        <th>Fuente</th>
+                        {isAdmin && <th>Acciones</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.emissionFactors.map((factor) => (
+                        <tr key={factor.id}>
+                          <td>{factor.scope}</td>
+                          <td>{factorActivities[factor.activity]}</td>
+                          <td>{formatFactor(factor)}</td>
+                          <td>{factor.geography}</td>
+                          <td>{factor.year}</td>
+                          <td>
+                            {factor.version} · {factor.method}
+                          </td>
+                          <td>{factor.source}</td>
+                          {isAdmin && (
+                            <td>
+                              <div className="table-actions">
+                                <button
+                                  className="button button-secondary button-small"
+                                  onClick={() => onEditFactor(factor)}
+                                >
+                                  Editar
+                                </button>
+                                {factor.id !== "factor-upme-sin-2024" && (
+                                  <button
+                                    className="icon-button"
+                                    onClick={() => onDeleteFactor(factor.id)}
+                                    aria-label="Eliminar factor"
+                                  >
+                                    ×
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mobile-record-list">
+                  {state.emissionFactors.map((factor) => (
+                    <article className="mobile-record-card" key={factor.id}>
+                      <div className="mobile-record-card-heading">
+                        <div className="mobile-record-main">
+                          <strong>{factorActivities[factor.activity]}</strong>
+                          <span>
+                            {factor.scope} · {factor.geography}
+                          </span>
+                        </div>
+                        <Status>{factor.year}</Status>
+                      </div>
+                      <div className="mobile-record-stat-grid">
+                        <div>
+                          <span>Factor</span>
+                          <strong>{formatFactor(factor)}</strong>
+                        </div>
+                        <div>
+                          <span>Versión</span>
+                          <strong>{factor.version}</strong>
+                        </div>
+                      </div>
+                      <p className="mobile-record-description">
+                        {factor.method} · {factor.source}
+                      </p>
+                      {isAdmin && (
+                        <div className="mobile-record-actions">
+                          <button
+                            className="button button-secondary"
+                            onClick={() => onEditFactor(factor)}
+                          >
+                            Editar
+                          </button>
+                          {factor.id !== "factor-upme-sin-2024" && (
+                            <button
+                              className="button button-danger"
+                              onClick={() => onDeleteFactor(factor.id)}
+                            >
+                              Eliminar
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <EmptyState>
+                Agrega un factor con fuente y versión para poder calcular emisiones.
+              </EmptyState>
+            )}
+            <div className="panel-body">
+              <p className="field-hint">
+                El valor oficial de la UPME para electricidad es de 2024. Cada mes usa el valor más
+                reciente disponible hasta ese año. Lo que no tiene valor se muestra como —.
+              </p>
+            </div>
+          </Panel>
         </div>
       </details>
 
       <details ref={readingsDetailsRef} className="environment-disclosure">
-        <summary>Lecturas registradas · {state.resourceReadings.length}</summary>
+        <summary>Consumos registrados · {state.resourceReadings.length}</summary>
         <div className="environment-disclosure-content">
-      <Panel
-        title="Lecturas registradas"
-        description="Cada recibo o captura queda como una lectura independiente; los recursos del mismo mes no se reemplazan."
-      >
-        {state.resourceReadings.length ? (
-          <>
-            <div className="environment-reading-filter-bar">
-              <label>
-                <span>Recurso</span>
-                <select
-                  value={readingResource}
-                  onChange={(event) =>
-                    setReadingResource(event.currentTarget.value as ResourceKind | "all")
-                  }
-                >
-                  <option value="all">Todos</option>
-                  {[...new Set(state.resourceReadings.map((reading) => reading.resource))]
-                    .sort((a, b) => resourceLabel(a).localeCompare(resourceLabel(b), "es-CO"))
-                    .map((resource) => (
-                      <option value={resource} key={resource}>
-                        {resourceLabel(resource)}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                <span>Periodo</span>
-                <select value={readingPeriod} onChange={(event) => setReadingPeriod(event.currentTarget.value)}>
-                  <option value="all">Todos</option>
-                  {readingPeriods.map((period) => (
-                    <option value={period} key={period}>
-                      {periodTitle(period)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Fuente</span>
-                <select
-                  value={readingSource}
-                  onChange={(event) =>
-                    setReadingSource(event.currentTarget.value as ConsumptionSource | "all")
-                  }
-                >
-                  <option value="all">Todas</option>
-                  {[...new Set(state.resourceReadings.map((reading) => reading.source))]
-                    .sort((a, b) => consumptionSourceLabels[a].localeCompare(consumptionSourceLabels[b], "es-CO"))
-                    .map((source) => (
-                      <option value={source} key={source}>
-                        {consumptionSourceLabels[source]}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                <span>Calidad</span>
-                <select
-                  value={readingQuality}
-                  onChange={(event) =>
-                    setReadingQuality(event.currentTarget.value as ReadingQuality | "all")
-                  }
-                >
-                  <option value="all">Todas</option>
-                  {[...new Set(state.resourceReadings.map((reading) => reading.quality))]
-                    .sort((a, b) => readingQualityLabels[a].localeCompare(readingQualityLabels[b], "es-CO"))
-                    .map((quality) => (
-                      <option value={quality} key={quality}>
-                        {readingQualityLabels[quality]}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <div className="environment-reading-filter-result" role="status" aria-live="polite">
-                {filteredReadings.length} de {state.resourceReadings.length} lecturas
-              </div>
-              {hasActiveReadingFilters && (
-                <button
-                  className="button button-secondary button-small environment-filter-reset"
-                  type="button"
-                  onClick={clearReadingFilters}
-                >
-                  Limpiar filtros
-                </button>
-              )}
-            </div>
-            {filteredReadings.length ? (
+          <Panel
+            title="Consumos registrados"
+            description="Cada recibo queda como un registro aparte."
+          >
+            {state.resourceReadings.length ? (
               <>
-            <div className="table-wrap desktop-record-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Recurso</th>
-                    <th>Actividad</th>
-                    <th>Periodo</th>
-                    <th>Cantidad</th>
-                    <th>Fuente / calidad</th>
-                    <th>Capturada</th>
-                    {canEdit && <th>Acciones</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredReadings.map((reading) => (
-                      <tr key={reading.id}>
-                        <td>{resourceLabel(reading.resource)}</td>
-                        <td>{activityLabel(reading.activity)}</td>
-                        <td>
-                          {reading.periodStart} → {reading.periodEnd}
-                        </td>
-                        <td>
-                          {formatNumber(reading.quantity)} {reading.unit}
-                        </td>
-                        <td>
-                          <Status
-                            tone={
-                              reading.quality === "estimated"
-                                ? "warning"
-                                : reading.quality === "measured"
-                                  ? "good"
-                                  : ""
-                            }
-                          >
-                            {sourceLabel(reading)} · {qualityLabel(reading)}
-                          </Status>
-                        </td>
-                        <td>{latestDate(reading.capturedAt)}</td>
-                        {canEdit && (
-                          <td>
-                            <div className="table-actions">
+                <div className="environment-reading-filter-bar">
+                  <label>
+                    <span>Recurso</span>
+                    <select
+                      value={readingResource}
+                      onChange={(event) =>
+                        setReadingResource(event.currentTarget.value as ResourceKind | "all")
+                      }
+                    >
+                      <option value="all">Todos</option>
+                      {[...new Set(state.resourceReadings.map((reading) => reading.resource))]
+                        .sort((a, b) => resourceLabel(a).localeCompare(resourceLabel(b), "es-CO"))
+                        .map((resource) => (
+                          <option value={resource} key={resource}>
+                            {resourceLabel(resource)}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Periodo</span>
+                    <select
+                      value={readingPeriod}
+                      onChange={(event) => setReadingPeriod(event.currentTarget.value)}
+                    >
+                      <option value="all">Todos</option>
+                      {readingPeriods.map((period) => (
+                        <option value={period} key={period}>
+                          {periodTitle(period)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Fuente</span>
+                    <select
+                      value={readingSource}
+                      onChange={(event) =>
+                        setReadingSource(event.currentTarget.value as ConsumptionSource | "all")
+                      }
+                    >
+                      <option value="all">Todas</option>
+                      {[...new Set(state.resourceReadings.map((reading) => reading.source))]
+                        .sort((a, b) =>
+                          consumptionSourceLabels[a].localeCompare(
+                            consumptionSourceLabels[b],
+                            "es-CO",
+                          ),
+                        )
+                        .map((source) => (
+                          <option value={source} key={source}>
+                            {consumptionSourceLabels[source]}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Calidad</span>
+                    <select
+                      value={readingQuality}
+                      onChange={(event) =>
+                        setReadingQuality(event.currentTarget.value as ReadingQuality | "all")
+                      }
+                    >
+                      <option value="all">Todas</option>
+                      {[...new Set(state.resourceReadings.map((reading) => reading.quality))]
+                        .sort((a, b) =>
+                          readingQualityLabels[a].localeCompare(readingQualityLabels[b], "es-CO"),
+                        )
+                        .map((quality) => (
+                          <option value={quality} key={quality}>
+                            {readingQualityLabels[quality]}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <div
+                    className="environment-reading-filter-result"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {filteredReadings.length} de {state.resourceReadings.length} consumos
+                  </div>
+                  {hasActiveReadingFilters && (
+                    <button
+                      className="button button-secondary button-small environment-filter-reset"
+                      type="button"
+                      onClick={clearReadingFilters}
+                    >
+                      Limpiar filtros
+                    </button>
+                  )}
+                </div>
+                {filteredReadings.length ? (
+                  <>
+                    <div className="table-wrap desktop-record-table">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Recurso</th>
+                            <th>Actividad</th>
+                            <th>Periodo</th>
+                            <th>Cantidad</th>
+                            <th>Fuente / calidad</th>
+                            <th>Capturada</th>
+                            {canEdit && <th>Acciones</th>}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredReadings.map((reading) => (
+                            <tr key={reading.id}>
+                              <td>{resourceLabel(reading.resource)}</td>
+                              <td>{activityLabel(reading.activity)}</td>
+                              <td>
+                                {reading.periodStart} → {reading.periodEnd}
+                              </td>
+                              <td>
+                                {formatNumber(reading.quantity)} {reading.unit}
+                              </td>
+                              <td>
+                                <Status
+                                  tone={
+                                    reading.quality === "estimated"
+                                      ? "warning"
+                                      : reading.quality === "measured"
+                                        ? "good"
+                                        : ""
+                                  }
+                                >
+                                  {sourceLabel(reading)} · {qualityLabel(reading)}
+                                </Status>
+                              </td>
+                              <td>{latestDate(reading.capturedAt)}</td>
+                              {canEdit && (
+                                <td>
+                                  <div className="table-actions">
+                                    <button
+                                      className="button button-secondary button-small"
+                                      onClick={() => onEditReading(reading)}
+                                    >
+                                      Editar
+                                    </button>
+                                    {canDelete && (
+                                      <button
+                                        className="icon-button"
+                                        onClick={() => onDeleteReading(reading.id)}
+                                        aria-label="Eliminar consumo"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mobile-record-list">
+                      {filteredReadings.map((reading) => (
+                        <article className="mobile-record-card" key={reading.id}>
+                          <div className="mobile-record-card-heading">
+                            <div className="mobile-record-main">
+                              <strong>
+                                {resourceLabel(reading.resource)} ·{" "}
+                                {activityLabel(reading.activity)}
+                              </strong>
+                              <span>
+                                {reading.periodStart} → {reading.periodEnd}
+                              </span>
+                            </div>
+                            <Status
+                              tone={
+                                reading.quality === "estimated"
+                                  ? "warning"
+                                  : reading.quality === "measured"
+                                    ? "good"
+                                    : ""
+                              }
+                            >
+                              {qualityLabel(reading)}
+                            </Status>
+                          </div>
+                          <div className="mobile-record-stat-grid">
+                            <div>
+                              <span>Consumo</span>
+                              <strong>
+                                {formatNumber(reading.quantity)} {reading.unit}
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Capturado</span>
+                              <strong>{latestDate(reading.capturedAt)}</strong>
+                            </div>
+                          </div>
+                          <p className="mobile-record-description">
+                            Fuente: {sourceLabel(reading)}
+                          </p>
+                          {canEdit && (
+                            <div className="mobile-record-actions">
                               <button
-                                className="button button-secondary button-small"
+                                className="button button-secondary"
                                 onClick={() => onEditReading(reading)}
                               >
                                 Editar
                               </button>
                               {canDelete && (
                                 <button
-                                  className="icon-button"
+                                  className="button button-danger"
                                   onClick={() => onDeleteReading(reading.id)}
-                                  aria-label="Eliminar lectura"
                                 >
-                                  ×
+                                  Eliminar
                                 </button>
                               )}
                             </div>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mobile-record-list">
-              {filteredReadings.map((reading) => (
-                  <article className="mobile-record-card" key={reading.id}>
-                    <div className="mobile-record-card-heading">
-                      <div className="mobile-record-main">
-                        <strong>
-                          {resourceLabel(reading.resource)} · {activityLabel(reading.activity)}
-                        </strong>
-                        <span>
-                          {reading.periodStart} → {reading.periodEnd}
-                        </span>
-                      </div>
-                      <Status
-                        tone={
-                          reading.quality === "estimated"
-                            ? "warning"
-                            : reading.quality === "measured"
-                              ? "good"
-                              : ""
-                        }
-                      >
-                        {qualityLabel(reading)}
-                      </Status>
+                          )}
+                        </article>
+                      ))}
                     </div>
-                    <div className="mobile-record-stat-grid">
-                      <div>
-                        <span>Consumo</span>
-                        <strong>
-                          {formatNumber(reading.quantity)} {reading.unit}
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Capturado</span>
-                        <strong>{latestDate(reading.capturedAt)}</strong>
-                      </div>
-                    </div>
-                    <p className="mobile-record-description">Fuente: {sourceLabel(reading)}</p>
-                    {canEdit && (
-                      <div className="mobile-record-actions">
-                        <button
-                          className="button button-secondary"
-                          onClick={() => onEditReading(reading)}
-                        >
-                          Editar
-                        </button>
-                        {canDelete && (
-                          <button
-                            className="button button-danger"
-                            onClick={() => onDeleteReading(reading.id)}
-                          >
-                            Eliminar
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </article>
-                ))}
-            </div>
+                  </>
+                ) : (
+                  <EmptyState>Ningún consumo coincide con esos filtros.</EmptyState>
+                )}
               </>
             ) : (
-              <EmptyState>No hay lecturas que coincidan con los filtros seleccionados.</EmptyState>
+              <EmptyState>Todavía no hay consumos guardados.</EmptyState>
             )}
-          </>
-        ) : (
-          <EmptyState>Aún no hay lecturas guardadas.</EmptyState>
-        )}
-      </Panel>
+          </Panel>
         </div>
       </details>
 
       <details className="environment-disclosure">
-        <summary>Catálogo de indicadores · {INDICATOR_CATALOG.length}</summary>
+        <summary>Cómo se calcula cada dato</summary>
         <div className="environment-disclosure-content">
-      <Panel
-        title="Indicadores disponibles"
-        description="Cálculos separados de la interfaz para poder ampliar el catálogo sin rehacer el tablero."
-      >
-        <div className="panel-body indicator-catalog-grid">
-          {INDICATOR_CATALOG.map((indicator) => (
-            <article className="indicator-definition" key={indicator.id}>
-              <strong>{indicator.label}</strong>
-              <span>{indicator.formula}</span>
-              <small>
-                Unidad: {indicator.unit} · Frecuencia sugerida: {indicator.cadence}
-              </small>
-            </article>
-          ))}
-        </div>
-      </Panel>
+          <Panel title="Cómo se calcula cada dato" description="De dónde sale cada dato.">
+            <div className="panel-body indicator-catalog-grid">
+              {INDICATOR_CATALOG.map((indicator) => (
+                <article className="indicator-definition" key={indicator.id}>
+                  <strong>{indicator.label}</strong>
+                  <span>{indicator.formula}</span>
+                  <small>
+                    Unidad: {indicator.unit} · Frecuencia sugerida: {indicator.cadence}
+                  </small>
+                </article>
+              ))}
+            </div>
+          </Panel>
         </div>
       </details>
 

@@ -32,7 +32,8 @@ function hasObjectRows(value: unknown): value is Record<string, unknown>[] {
 }
 
 function hasCoreState(value: unknown): value is Record<string, unknown> {
-  if (!isRecord(value) || ![1, 2, 3, 4, 5, 6, 7].includes(Number(value.schemaVersion))) return false;
+  if (!isRecord(value) || ![1, 2, 3, 4, 5, 6, 7].includes(Number(value.schemaVersion)))
+    return false;
   if (value.company !== null && !isRecord(value.company)) return false;
   if (value.receiptImports !== undefined && !hasObjectRows(value.receiptImports)) return false;
   const coreValid = [
@@ -182,7 +183,10 @@ export function migrateAppState(value: unknown): AppState | null {
                 Number.isFinite(Number(line.quantity)) &&
                 Number(line.quantity) > 0,
             )
-            .map((line) => ({ productId: String(line.productId), quantity: Number(line.quantity) }));
+            .map((line) => ({
+              productId: String(line.productId),
+              quantity: Number(line.quantity),
+            }));
           if (!components.length) return [];
           const productId = String(row.id ?? "");
           const versionId = `legacy-recipe-version-${productId}-1`;
@@ -316,14 +320,14 @@ export function migrateAppState(value: unknown): AppState | null {
       : [],
     environmentalConfig: {
       providerId: "local-receipt",
-      providerName: "Enel Colombia",
+      providerName: "EBSA",
       accountNumber: "",
       businessUnit: "",
       geography: "Colombia SIN",
       ...(isRecord(value.environmentalConfig) ? value.environmentalConfig : {}),
       benchmarking: {
         countryCode: "CO",
-        region: "Antioquia",
+        region: "Boyacá",
         sectorCode: "1104",
         outputUnit: "L",
         assumedMonthlyOutput: 100000,

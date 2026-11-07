@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { applyTheme, getInitialTheme } from "./app/AppViews";
 import { ensureLocalRuntimeAssets } from "./infrastructure/runtime-assets";
+import "@fontsource-variable/figtree";
 import "./tailwind.css";
 
 applyTheme(getInitialTheme());

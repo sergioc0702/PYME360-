@@ -6,10 +6,10 @@ import {
   readString,
   Field,
   Modal,
-  Panel,
   SelectField,
   Status,
 } from "../AppViews";
+import { DOCUMENT_LABELS, documentTone } from "./SalesScreen";
 import {
   fetchElectronicDocumentStatus,
   fetchEInvoicingProviderStatus,
@@ -26,6 +26,12 @@ import type {
   SupplierInvoiceDocument,
   TaxConfiguration,
 } from "../../domain/types";
+
+const DOCUMENT_KIND_LABELS: Record<ElectronicDocument["kind"], string> = {
+  invoice: "Factura de venta",
+  credit_note: "Nota crédito",
+  debit_note: "Nota débito",
+};
 
 type SupplierInvoiceInput = Omit<
   SupplierInvoiceDocument,
@@ -188,31 +194,28 @@ export function ElectronicInvoicingPanel({
   function electronicDocumentActionButtons(document: ElectronicDocument) {
     return (
       <>
-        {canEdit && ["draft", "rejected"].includes(document.status) && (
+        {canEdit && connected && ["draft", "rejected"].includes(document.status) && (
           <button
-            className="button button-secondary button-small"
+            className="action-link"
             type="button"
             disabled={
-              !connected ||
               providerMismatch ||
               document.validationIssues.length > 0 ||
               checkingDocumentId === document.id
             }
             title={
-              !connected
-                ? "Configura un proveedor tecnológico autorizado para solicitar el envío."
-                : providerMismatch
-                  ? "El identificador del proveedor en la empresa no coincide con el conector del servidor."
-                  : document.validationIssues.join(" ")
+              providerMismatch
+                ? "El código del proveedor guardado no coincide con la conexión."
+                : document.validationIssues.join(" ")
             }
             onClick={() => void submitElectronicDocument(document)}
           >
-            Solicitar emisión
+            Enviar a la DIAN
           </button>
         )}
         {isAdmin && isUnsentElectronicDraft(document) && (
           <button
-            className="button button-secondary button-small"
+            className="action-link is-danger"
             type="button"
             onClick={() => onDeleteDraft(document)}
           >
@@ -223,7 +226,7 @@ export function ElectronicInvoicingPanel({
           document.kind === "invoice" &&
           ["accepted", "delivered"].includes(document.status) && (
             <button
-              className="button button-secondary button-small"
+              className="action-link"
               type="button"
               onClick={() => setSelectedOriginal(document)}
             >
@@ -267,7 +270,7 @@ export function ElectronicInvoicingPanel({
           `El proveedor recibió el documento (${documentStatusLabel(result.status)}).`,
       }));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "No se pudo solicitar la emisión.");
+      setError(reason instanceof Error ? reason.message : "No se pudo enviar la factura.");
     } finally {
       setCheckingDocumentId("");
     }
@@ -275,321 +278,220 @@ export function ElectronicInvoicingPanel({
 
   return (
     <>
-      <Panel
-        title="Facturación electrónica y documentos de proveedores"
-        description="Prepara información tributaria, conserva borradores y revisa facturas XML localmente."
-        action={
-          <div className="flex flex-wrap gap-2">
-            {isAdmin && (
-              <button
-                className="button button-secondary button-small"
-                onClick={() => setConfigurationOpen(true)}
-              >
-                Configuración tributaria
-              </button>
-            )}
-            {canEdit && (
-              <label className="button button-primary button-small cursor-pointer">
-                {parsing ? "Leyendo XML…" : "Importar XML proveedor"}
-                <input
-                  className="sr-only"
-                  type="file"
-                  accept=".xml,application/xml,text/xml"
-                  disabled={parsing}
-                  onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
-                    void handleXmlFile(file);
-                    event.currentTarget.value = "";
-                  }}
-                />
-              </label>
-            )}
-          </div>
-        }
-      >
-        <div className="panel-body grid gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Status tone={providerMismatch ? "danger" : connected ? "good" : "warning"}>
-              {providerMismatch
-                ? `Proveedor distinto · conector: ${providerStatus?.providerId}`
-                : connected
-                  ? `Proveedor conectado${providerStatus?.providerId ? ` · ${providerStatus.providerId}` : ""}`
-                  : "Sin proveedor tecnológico conectado"}
-            </Status>
-            <Status>{config.environment === "production" ? "Producción" : "Pruebas"}</Status>
-            <Status tone={numberingExpired ? "danger" : numberingReady ? "good" : "warning"}>
-              {numberingExpired
-                ? "Numeración vencida"
-                : numberingReady
-                  ? "Numeración configurada"
-                  : "Numeración pendiente"}
-            </Status>
-            {providerStatusError && (
-              <span className="text-xs text-muted">{providerStatusError}</span>
-            )}
+      {error && !preview && <div className="notice warning">{error}</div>}
+      <section aria-labelledby="facturas-venta">
+        <div className="screen-section-heading">
+          <h2 id="facturas-venta">Facturas de venta</h2>
+          {isAdmin && (
             <button
-              className="button button-secondary button-small"
+              className="action-secondary"
               type="button"
-              disabled={providerLoading}
-              onClick={() => void loadProviderStatus()}
+              onClick={() => setConfigurationOpen(true)}
             >
-              {providerLoading ? "Consultando…" : "Revisar conexión"}
+              Datos para facturar
             </button>
-          </div>
-          <div className="notice warning">
-            {providerStatus?.message ??
-              "Pyme360 prepara borradores, pero no transmite a la DIAN hasta configurar un conector autorizado."}
-            {config.providerId && !connected
-              ? ` ID de proveedor guardado: ${config.providerId}; aún no hay adaptador habilitado.`
-              : ""}
-            {providerMismatch
-              ? ` El conector del servidor está registrado como ${providerStatus?.providerId}, pero la empresa configuró ${config.providerId}. Ajusta uno de los dos identificadores.`
-              : ""}
-          </div>
-          {state.electronicDocuments.length > 0 && (
-            <>
-            <div className="table-wrap desktop-record-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Documento</th>
-                    <th>Venta</th>
-                    <th>Fecha preparada</th>
-                    <th>Estado</th>
-                    <th>Validaciones pendientes</th>
-                    {canEdit && <th>Acciones</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {orderedElectronicDocuments.map((document) => (
-                    <tr key={document.id}>
-                      <td>
-                        <strong>{document.documentNumber || "Borrador sin numerar"}</strong>
-                        <small>
-                          {document.kind === "invoice"
-                            ? "Factura de venta"
-                            : document.kind === "credit_note"
-                              ? "Nota crédito"
-                              : "Nota débito"}
-                        </small>
-                      </td>
-                      <td>
-                        {state.sales.find((sale) => sale.id === document.saleId)?.number ??
-                          "Venta histórica"}
-                      </td>
-                      <td>{formatDate(document.createdAt.slice(0, 10))}</td>
-                      <td>
-                        <Status
-                          tone={
-                            document.status === "accepted" || document.status === "delivered"
-                              ? "good"
-                              : document.status === "rejected"
-                                ? "danger"
-                                : "warning"
-                          }
-                        >
-                          {documentStatusLabel(document.status)}
-                        </Status>
-                        <button
-                          className="button button-secondary button-small mt-2"
-                          type="button"
-                          disabled={checkingDocumentId === document.id}
-                          onClick={() => void checkDocumentStatus(document)}
-                        >
-                          {checkingDocumentId === document.id ? "Consultando…" : "Consultar estado"}
-                        </button>
-                        {documentStatusMessages[document.id] && (
-                          <small>{documentStatusMessages[document.id]}</small>
-                        )}
-                        {document.providerReference && (
-                          <small>Referencia del proveedor: {document.providerReference}</small>
-                        )}
-                        {document.cufe && <small>CUFE: {document.cufe}</small>}
-                        {document.validationMessage && (
-                          <small>{document.validationMessage}</small>
-                        )}
-                      </td>
-                      <td>
-                        {document.validationIssues.length
-                          ? document.validationIssues.join(" ")
-                          : "Sin alertas locales"}
-                      </td>
-                      {canEdit && <td>{electronicDocumentActionButtons(document)}</td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mobile-record-list">
-              {orderedElectronicDocuments.map((document) => {
-                const saleNumber =
-                  state.sales.find((sale) => sale.id === document.saleId)?.number ??
-                  "Venta histórica";
-                const kindLabel =
-                  document.kind === "invoice"
-                    ? "Factura de venta"
-                    : document.kind === "credit_note"
-                      ? "Nota crédito"
-                      : "Nota débito";
-
-                return (
-                  <article className="mobile-record-card" key={document.id}>
-                    <div className="mobile-record-card-heading">
-                      <div className="mobile-record-main">
-                        <strong>{document.documentNumber || "Borrador sin numerar"}</strong>
-                        <span>{kindLabel} · {saleNumber}</span>
-                        <span>Preparada el {formatDate(document.createdAt.slice(0, 10))}</span>
-                      </div>
-                      <Status
-                        tone={
-                          document.status === "accepted" || document.status === "delivered"
-                            ? "good"
-                            : document.status === "rejected"
-                              ? "danger"
-                              : "warning"
-                        }
-                      >
-                        {documentStatusLabel(document.status)}
-                      </Status>
-                    </div>
-                    <div className="mobile-record-details">
-                      {document.providerReference && (
-                        <span>Referencia del proveedor: {document.providerReference}</span>
-                      )}
-                      {document.cufe && <span className="break-all">CUFE: {document.cufe}</span>}
-                      {document.validationMessage && <span>{document.validationMessage}</span>}
-                    </div>
-                    <details className="mobile-metric-details">
-                      <summary>
-                        {document.validationIssues.length
-                          ? `Validaciones pendientes (${document.validationIssues.length})`
-                          : "Validaciones locales"}
-                      </summary>
-                      <p className="mobile-record-description">
-                        {document.validationIssues.length
-                          ? document.validationIssues.join(" ")
-                          : "Sin alertas locales"}
-                      </p>
-                    </details>
-                    <div className="mobile-record-actions">
-                      <button
-                        className="button button-secondary"
-                        type="button"
-                        disabled={checkingDocumentId === document.id}
-                        onClick={() => void checkDocumentStatus(document)}
-                      >
-                        {checkingDocumentId === document.id ? "Consultando…" : "Consultar estado"}
-                      </button>
-                      {electronicDocumentActionButtons(document)}
-                    </div>
-                    {documentStatusMessages[document.id] && (
-                      <p className="mobile-record-description" role="status">
-                        {documentStatusMessages[document.id]}
-                      </p>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-            </>
           )}
-          <div>
-            <h3 className="mb-2 text-sm font-semibold">Facturas de proveedores importadas</h3>
-            {state.supplierInvoices.length ? (
-              <>
-              <div className="table-wrap desktop-record-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Factura</th>
-                      <th>Proveedor</th>
-                      <th>Fecha</th>
-                      <th>Moneda / total</th>
-                      <th>Compra relacionada</th>
-                      <th>Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {state.supplierInvoices.map((invoice) => (
-                      <tr key={invoice.id}>
-                        <td>
-                          <strong>{invoice.documentNumber}</strong>
-                          <small>{invoice.fileName}</small>
-                        </td>
-                        <td>
-                          {invoice.supplierName}
-                          <small>{invoice.supplierTaxId}</small>
-                        </td>
-                        <td>{formatDate(invoice.issueDate)}</td>
-                        <td>
-                          {invoice.currency} {formatNumber(invoice.total)}
-                          <small>Impuestos: {formatNumber(invoice.taxAmount)}</small>
-                        </td>
-                        <td>
-                          {state.purchases.find((purchase) => purchase.id === invoice.purchaseId)
-                            ?.number ?? "Sin vincular"}
-                        </td>
-                        <td>
-                          <Status tone={invoice.status === "linked" ? "good" : "warning"}>
-                            {invoice.status === "linked" ? "Vinculada" : "Pendiente de revisión"}
-                          </Status>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mobile-record-list">
-                {state.supplierInvoices.map((invoice) => {
-                  const relatedPurchase = state.purchases.find(
-                    (purchase) => purchase.id === invoice.purchaseId,
-                  );
-                  return (
-                    <article className="mobile-record-card" key={invoice.id}>
-                      <div className="mobile-record-card-heading">
-                        <div className="mobile-record-main">
-                          <strong>{invoice.documentNumber}</strong>
-                          <span>{invoice.supplierName}</span>
-                          <span>{invoice.supplierTaxId}</span>
-                        </div>
-                        <Status tone={invoice.status === "linked" ? "good" : "warning"}>
-                          {invoice.status === "linked" ? "Vinculada" : "Pendiente de revisión"}
-                        </Status>
-                      </div>
-                      <div className="mobile-record-stat-grid">
-                        <div>
-                          <span>Total · {invoice.currency}</span>
-                          <strong>{formatNumber(invoice.total)}</strong>
-                        </div>
-                        <div>
-                          <span>Impuestos</span>
-                          <strong>{formatNumber(invoice.taxAmount)}</strong>
-                        </div>
-                      </div>
-                      <div className="mobile-record-details">
-                        <span>Fecha: {formatDate(invoice.issueDate)}</span>
-                        <span>Compra: {relatedPurchase?.number ?? "Sin vincular"}</span>
-                        <span className="break-all">Archivo: {invoice.fileName}</span>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-              </>
-            ) : (
-              <p className="m-0 text-sm text-muted">
-                No se han importado facturas XML de proveedores.
-              </p>
-            )}
-          </div>
-          <p className="m-0 text-xs leading-relaxed text-muted">
-            El XML se procesa en el servidor de este computador y se descarta después de la vista
-            previa. Al confirmar se guardan los datos normalizados; no se crean movimientos de
-            inventario, pagos ni obligaciones automáticamente.
-          </p>
         </div>
-      </Panel>
+        <dl className="screen-facts">
+          <div>
+            <dt>Envío a la DIAN</dt>
+            <dd>{providerMismatch ? "Por revisar" : connected ? "Conectado" : "Sin conectar"}</dd>
+          </div>
+          <div>
+            <dt>Modo</dt>
+            <dd>{config.environment === "production" ? "Real" : "Pruebas"}</dd>
+          </div>
+          <div>
+            <dt>Numeración</dt>
+            <dd className={numberingExpired ? "is-low" : undefined}>
+              {numberingExpired ? "Vencida" : numberingReady ? "Lista" : "Pendiente"}
+            </dd>
+          </div>
+        </dl>
+        <p className="screen-note">
+          {providerMismatch
+            ? "El código del proveedor de facturación guardado no coincide con la conexión. Revísalo en Datos para facturar."
+            : connected
+              ? "Tus facturas se envían a la DIAN por medio de tu proveedor de facturación."
+              : "Por ahora Pyme360 prepara tus facturas, pero no las envía a la DIAN. Para enviarlas necesitas un proveedor de facturación autorizado."}
+        </p>
+        {orderedElectronicDocuments.length ? (
+          <ul className="records records-documents">
+            <li className="records-head" aria-hidden="true">
+              <span>Factura</span>
+              <span>Estado</span>
+              <span>Qué falta</span>
+              <span />
+            </li>
+            {orderedElectronicDocuments.map((document) => (
+              <li key={document.id}>
+                <div className="records-main">
+                  <strong>{document.documentNumber || "Borrador sin numerar"}</strong>
+                  <span>
+                    {DOCUMENT_KIND_LABELS[document.kind]} ·{" "}
+                    {state.sales.find((sale) => sale.id === document.saleId)?.number ??
+                      "Venta antigua"}{" "}
+                    · {formatDate(document.createdAt.slice(0, 10))}
+                  </span>
+                  {document.providerReference && (
+                    <span className="records-detail records-wrap">
+                      Referencia del proveedor: {document.providerReference}
+                    </span>
+                  )}
+                  {document.cufe && (
+                    <span className="records-detail records-wrap">CUFE: {document.cufe}</span>
+                  )}
+                </div>
+                <div data-label="Estado">
+                  <Status tone={documentTone(document.status)}>
+                    {documentStatusLabel(document.status)}
+                  </Status>
+                  {document.validationMessage && (
+                    <span className="records-detail">{document.validationMessage}</span>
+                  )}
+                  {documentStatusMessages[document.id] && (
+                    <span className="records-detail" role="status">
+                      {documentStatusMessages[document.id]}
+                    </span>
+                  )}
+                </div>
+                <div data-label="Qué falta">
+                  {document.validationIssues.length ? (
+                    <details className="task-history">
+                      <summary>
+                        {document.validationIssues.length === 1
+                          ? "Falta 1 dato"
+                          : `Faltan ${document.validationIssues.length} datos`}
+                      </summary>
+                      <ul className="records-issues">
+                        {document.validationIssues.map((issue) => (
+                          <li key={issue}>{issue}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : (
+                    "Nada por ahora"
+                  )}
+                </div>
+                <div className="row-actions">
+                  {(connected || document.status !== "draft") && (
+                    <button
+                      className="action-link"
+                      type="button"
+                      disabled={checkingDocumentId === document.id}
+                      onClick={() => void checkDocumentStatus(document)}
+                    >
+                      {checkingDocumentId === document.id ? "Consultando…" : "Consultar estado"}
+                    </button>
+                  )}
+                  {electronicDocumentActionButtons(document)}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="screen-empty">
+            Todavía no tienes facturas. Prepara una desde la pestaña Ventas.
+          </p>
+        )}
+      </section>
 
+      <section aria-labelledby="facturas-proveedores">
+        <div className="screen-section-heading">
+          <h2 id="facturas-proveedores">Facturas de proveedores</h2>
+          {canEdit && (
+            <label className="action-secondary action-file">
+              {parsing ? "Leyendo archivo…" : "Subir factura XML"}
+              <input
+                className="sr-only"
+                type="file"
+                accept=".xml,application/xml,text/xml"
+                disabled={parsing}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  void handleXmlFile(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+          )}
+        </div>
+        {state.supplierInvoices.length ? (
+          <ul className="records records-supplier-invoices">
+            <li className="records-head" aria-hidden="true">
+              <span>Factura</span>
+              <span>Fecha</span>
+              <span>Total</span>
+              <span>Compra</span>
+              <span>Estado</span>
+            </li>
+            {state.supplierInvoices.map((invoice) => (
+              <li key={invoice.id}>
+                <div className="records-main">
+                  <strong>{invoice.documentNumber}</strong>
+                  <span>
+                    {invoice.supplierName} · {invoice.supplierTaxId}
+                  </span>
+                  <span className="records-detail records-wrap">{invoice.fileName}</span>
+                </div>
+                <div data-label="Fecha">{formatDate(invoice.issueDate)}</div>
+                <div data-label="Total">
+                  {invoice.currency} {formatNumber(invoice.total)}
+                  <span className="records-detail">
+                    Impuestos: {formatNumber(invoice.taxAmount)}
+                  </span>
+                </div>
+                <div data-label="Compra">
+                  {state.purchases.find((purchase) => purchase.id === invoice.purchaseId)?.number ??
+                    "Sin relacionar"}
+                </div>
+                <div data-label="Estado">
+                  <Status tone={invoice.status === "linked" ? "good" : "warning"}>
+                    {invoice.status === "linked" ? "Relacionada" : "Por revisar"}
+                  </Status>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="screen-empty">Todavía no has subido facturas de proveedores.</p>
+        )}
+        <p className="screen-note">
+          El archivo XML se lee en este computador y no se conserva. Al confirmar se guardan sus
+          datos, pero no cambia el inventario ni se crean pagos.
+        </p>
+      </section>
+
+      {isAdmin && (
+        <>
+          <h2 className="screen-more-title">Más detalle</h2>
+          <details className="environment-disclosure">
+            <summary>Conexión con el proveedor de facturación</summary>
+            <div className="environment-disclosure-content">
+              {providerStatusError && <p className="screen-note">{providerStatusError}</p>}
+              {providerStatus?.message && <p className="screen-note">{providerStatus.message}</p>}
+              {config.providerId && (
+                <p className="screen-note">
+                  Código guardado: {config.providerId}
+                  {providerMismatch ? `. La conexión usa: ${providerStatus?.providerId}.` : ""}
+                </p>
+              )}
+              <p className="screen-note">
+                La conexión se configura en el archivo server/.env del servidor. Aquí no se guardan
+                claves ni certificados.
+              </p>
+              <button
+                className="action-link"
+                type="button"
+                disabled={providerLoading}
+                onClick={() => void loadProviderStatus()}
+              >
+                {providerLoading ? "Consultando…" : "Revisar conexión"}
+              </button>
+            </div>
+          </details>
+        </>
+      )}
       {configurationOpen && (
         <TaxConfigurationForm
           configuration={config}
@@ -608,20 +510,20 @@ export function ElectronicInvoicingPanel({
         />
       )}
       {preview && (
-        <Modal title="Revisar factura XML del proveedor" onClose={() => setPreview(null)} wide>
+        <Modal title="Revisar factura del proveedor" onClose={() => setPreview(null)} wide>
           <div className="modal-body grid gap-4">
             {error && <div className="notice warning">{error}</div>}
             {preview.buyerTaxId.trim().toLowerCase() !==
               (state.company?.taxId ?? "").trim().toLowerCase() && (
               <div className="notice warning">
-                El NIT del adquirente del XML no coincide con el de la empresa configurada. Puedes
-                guardarlo pendiente de revisión, pero no vincularlo a una compra.
+                El NIT del comprador en la factura no es el de tu empresa. Puedes guardarla para
+                revisarla después, pero no relacionarla con una compra.
               </div>
             )}
             {preview.currency !== "COP" && (
               <div className="notice warning">
-                La factura está en {preview.currency}. Pyme360 no convierte moneda; guárdala sin
-                vincularla a una compra hasta revisar el valor y la conversión aplicable.
+                La factura está en {preview.currency} y Pyme360 no convierte monedas. Guárdala sin
+                relacionarla con una compra hasta revisar el valor en pesos.
               </div>
             )}
             <div className="grid grid-cols-2 gap-3 text-sm max-sm:grid-cols-1">
@@ -662,12 +564,12 @@ export function ElectronicInvoicingPanel({
               preview.buyerTaxId.trim().toLowerCase() ===
                 (state.company?.taxId ?? "").trim().toLowerCase() && (
                 <SelectField
-                  label="Vincular a compra existente (opcional)"
+                  label="Relacionar con una compra (opcional)"
                   name="supplier-invoice-purchase"
                   value={selectedPurchaseId}
                   onChange={setSelectedPurchaseId}
                   options={[
-                    { value: "", label: "Guardar pendiente de revisión" },
+                    { value: "", label: "Guardar para revisar después" },
                     ...matchingPurchases.map((purchase) => ({
                       value: purchase.id,
                       label: `${purchase.number} · ${purchase.supplierName} · ${formatMoney(purchase.total)}`,
@@ -715,7 +617,7 @@ export function ElectronicInvoicingPanel({
                 disabled={saving}
                 onClick={() => void saveSupplierInvoice()}
               >
-                {saving ? "Guardando…" : "Confirmar importación"}
+                {saving ? "Guardando…" : "Guardar factura"}
               </button>
             </div>
           </div>
@@ -732,7 +634,6 @@ export function ElectronicInvoicingPanel({
           }}
         />
       )}
-      {error && !preview && <div className="notice warning mt-3">{error}</div>}
     </>
   );
 }
@@ -797,9 +698,8 @@ function AdjustmentNoteForm({
     >
       <form className="modal-body grid gap-4" onSubmit={(event) => void submit(event)}>
         <div className="notice warning">
-          La nota queda como borrador. Solo el proveedor conectado podrá transmitirla y actualizar
-          su estado. Los ajustes aceptados modificarán el saldo por cobrar; no cambian inventario
-          automáticamente.
+          La nota queda como borrador hasta que tu proveedor de facturación la envíe. Cuando la
+          acepten, cambia lo que te deben, pero no cambia el inventario.
         </div>
         {error && <div className="notice warning">{error}</div>}
         <SelectField
@@ -828,7 +728,7 @@ function AdjustmentNoteForm({
           <table>
             <thead>
               <tr>
-                <th>Línea de factura</th>
+                <th>Producto</th>
                 <th>Valor unitario</th>
                 <th>IVA</th>
                 <th>Cantidad a ajustar</th>
@@ -887,16 +787,7 @@ function AdjustmentNoteForm({
 }
 
 function documentStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    draft: "Borrador",
-    queued: "En cola",
-    transmitted: "Enviado",
-    accepted: "Aceptado",
-    rejected: "Rechazado",
-    delivered: "Entregado",
-    contingency_pending: "Contingencia pendiente",
-  };
-  return labels[status] ?? status;
+  return DOCUMENT_LABELS[status as ElectronicDocument["status"]] ?? status;
 }
 
 function TaxConfigurationForm({
@@ -950,29 +841,28 @@ function TaxConfigurationForm({
     }
   }
   return (
-    <Modal title="Configuración tributaria y numeración" onClose={onClose} wide>
+    <Modal title="Datos para facturar" onClose={onClose} wide>
       <form className="modal-body" onSubmit={(event) => void submit(event)}>
         {(error || formError) && <div className="notice warning">{error || formError}</div>}
         <div className="notice warning">
-          Ingresa únicamente los datos confirmados en el RUT y en la autorización de numeración. El
-          conector se configura fuera de esta pantalla, en <code>server/.env</code>; aquí no se
-          guardan credenciales ni certificados.
+          Escribe solo lo que aparece en tu RUT y en la autorización de numeración de la DIAN. Aquí
+          no se guardan claves ni certificados.
         </div>
         <div className="form-grid">
           <Field
-            label="Dirección fiscal"
+            label="Dirección del RUT"
             name="legalAddress"
             initialValue={configuration.legalAddress}
             required
           />
           <Field
-            label="Correo de recepción de facturas"
+            label="Correo para recibir facturas"
             name="invoiceEmail"
             type="email"
             initialValue={configuration.invoiceEmail}
           />
           <Field
-            label="Régimen / perfil tributario (según RUT)"
+            label="Régimen (según el RUT)"
             name="taxRegime"
             initialValue={configuration.taxRegime}
           />
@@ -982,17 +872,17 @@ function TaxConfigurationForm({
             initialValue={configuration.taxResponsibilities.join(", ")}
           />
           <Field
-            label="ID del proveedor tecnológico (debe coincidir con server/.env)"
+            label="Código del proveedor de facturación"
             name="providerId"
             initialValue={configuration.providerId}
           />
           <SelectField
-            label="Ambiente"
+            label="Modo"
             name="environment"
             initialValue={configuration.environment}
             options={[
               { value: "test", label: "Pruebas" },
-              { value: "production", label: "Producción" },
+              { value: "production", label: "Real" },
             ]}
           />
           <Field
@@ -1002,7 +892,7 @@ function TaxConfigurationForm({
           />
           <Field label="Prefijo" name="prefix" initialValue={configuration.prefix} />
           <Field
-            label="Rango autorizado · desde"
+            label="Autorizada desde el número"
             name="rangeFrom"
             type="number"
             initialValue={configuration.rangeFrom ?? ""}
@@ -1010,7 +900,7 @@ function TaxConfigurationForm({
             step="1"
           />
           <Field
-            label="Rango autorizado · hasta"
+            label="Autorizada hasta el número"
             name="rangeTo"
             type="number"
             initialValue={configuration.rangeTo ?? ""}
@@ -1018,13 +908,13 @@ function TaxConfigurationForm({
             step="1"
           />
           <Field
-            label="Vigencia desde"
+            label="Autorización válida desde"
             name="validFrom"
             type="date"
             initialValue={configuration.validFrom}
           />
           <Field
-            label="Vigencia hasta"
+            label="Autorización válida hasta"
             name="validTo"
             type="date"
             initialValue={configuration.validTo}
@@ -1035,7 +925,7 @@ function TaxConfigurationForm({
             initialValue={configuration.contingencyPrefix}
           />
           <Field
-            label="Rango de contingencia · desde"
+            label="Contingencia desde el número"
             name="contingencyRangeFrom"
             type="number"
             initialValue={configuration.contingencyRangeFrom ?? ""}
@@ -1043,7 +933,7 @@ function TaxConfigurationForm({
             step="1"
           />
           <Field
-            label="Rango de contingencia · hasta"
+            label="Contingencia hasta el número"
             name="contingencyRangeTo"
             type="number"
             initialValue={configuration.contingencyRangeTo ?? ""}
@@ -1056,7 +946,7 @@ function TaxConfigurationForm({
             Cancelar
           </button>
           <button className="button button-primary" type="submit">
-            Guardar configuración
+            Guardar
           </button>
         </div>
       </form>

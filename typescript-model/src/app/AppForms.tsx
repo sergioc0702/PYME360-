@@ -102,12 +102,7 @@ export function CompanyForm({
     <Modal title="Configurar empresa" onClose={onClose}>
       <form className="modal-body" onSubmit={submit}>
         <div className="form-grid">
-          <Field
-            label="Nombre o razón social"
-            name="name"
-            initialValue={company?.name ?? ""}
-            required
-          />
+          <Field label="Nombre o empresa" name="name" initialValue={company?.name ?? ""} required />
           <Field label="NIT" name="taxId" initialValue={company?.taxId ?? ""} />
           <Field label="Ciudad" name="city" initialValue={company?.city ?? ""} />
           <Field label="Actividad" name="activity" initialValue={company?.activity ?? ""} />
@@ -143,11 +138,11 @@ export function ContactForm({
     });
   }
   return (
-    <Modal title={contact ? "Editar contacto" : "Nuevo contacto"} onClose={onClose}>
+    <Modal title={contact ? "Editar contacto" : "Agregar contacto"} onClose={onClose}>
       <form className="modal-body" onSubmit={submit}>
         <div className="form-grid">
           <SelectField
-            label="Tipo de contacto"
+            label="Tipo"
             name="role"
             initialValue={role}
             onChange={(value) => {
@@ -163,7 +158,7 @@ export function ContactForm({
             ]}
           />
           <Field
-            label="Nombre o razón social"
+            label="Nombre o empresa"
             name="name"
             initialValue={contact?.name ?? ""}
             required={!ordinary}
@@ -175,7 +170,7 @@ export function ContactForm({
             name="identificationType"
             initialValue={contact?.identificationType ?? ""}
             options={[
-              { value: "", label: "Sin clasificar" },
+              { value: "", label: "Sin definir" },
               { value: "NIT", label: "NIT" },
               { value: "CC", label: "Cédula de ciudadanía" },
               { value: "CE", label: "Cédula de extranjería" },
@@ -288,12 +283,12 @@ export function ProductForm({
           {type !== "finished" && (
             <>
               <Field
-                label="Unidad ambiental base (opcional)"
+                label="Unidad para medir material (opcional)"
                 name="environmentalUnit"
                 initialValue={product?.environmentalUnit ?? inferred?.base ?? ""}
               />
               <Field
-                label="Conversión a unidad base"
+                label="Cuánto pesa cada unidad"
                 name="environmentalConversionFactor"
                 type="number"
                 initialValue={product?.environmentalConversionFactor ?? inferred?.factor ?? ""}
@@ -301,7 +296,7 @@ export function ProductForm({
                 step="any"
               />
               <Field
-                label="Contenido reciclado del material (%)"
+                label="Parte reciclada del material (%)"
                 name="recycledContentPercent"
                 type="number"
                 initialValue={product?.recycledContentPercent ?? ""}
@@ -321,16 +316,15 @@ export function ProductForm({
           {product ? (
             <div className="field">
               <span>Existencia actual</span>
-              <strong>
-                {formatQuantity(product.stock, product.unit)}
-              </strong>
+              <strong>{formatQuantity(product.stock, product.unit)}</strong>
               <span className="field-hint">
-                Para conciliarla, registra un conteo físico y el motivo. La diferencia quedará en el historial de movimientos.
+                Para conciliarla, registra un conteo físico y el motivo. La diferencia quedará en el
+                historial de movimientos.
               </span>
             </div>
           ) : (
             <Field
-              label="Existencia inicial"
+              label="Cantidad que tienes hoy"
               name="stock"
               type="number"
               initialValue={0}
@@ -359,7 +353,7 @@ export function ProductForm({
             </>
           )}
           <Field
-            label="Inventario mínimo"
+            label="Mínimo que quieres tener"
             name="minimumStock"
             type="number"
             initialValue={product?.minimumStock ?? 0}
@@ -368,7 +362,7 @@ export function ProductForm({
             required
           />
           <Field
-            label="Costo unitario COP"
+            label="Costo por unidad (pesos)"
             name="unitCost"
             type="number"
             initialValue={product?.unitCost ?? 0}
@@ -377,7 +371,7 @@ export function ProductForm({
             required
           />
           <Field
-            label="Precio de venta COP"
+            label="Precio de venta (pesos)"
             name="unitPrice"
             type="number"
             initialValue={product?.unitPrice ?? 0}
@@ -396,12 +390,12 @@ export function ProductForm({
             required
           />
           <SelectField
-            label="Clasificación tributaria"
+            label="IVA del producto"
             name="taxCategory"
             initialValue={product?.taxCategory ?? "unclassified"}
             options={[
-              { value: "unclassified", label: "Por clasificar (no se puede emitir)" },
-              { value: "taxable", label: "Gravado con IVA" },
+              { value: "unclassified", label: "Sin definir (no se puede facturar)" },
+              { value: "taxable", label: "Con IVA" },
               { value: "exempt", label: "Exento" },
               { value: "excluded", label: "Excluido" },
               { value: "not_applicable", label: "No aplica" },
@@ -469,7 +463,17 @@ export function RecipeForm({
   }
   const selectedProduct = products.find((product) => product.id === selectedProductId);
   return (
-    <Modal title={version ? `Editar borrador v${version.versionNumber}` : recipe ? "Nueva versión de receta" : "Crear receta"} onClose={onClose} wide>
+    <Modal
+      title={
+        version
+          ? `Editar borrador v${version.versionNumber}`
+          : recipe
+            ? "Nueva versión de receta"
+            : "Crear receta"
+      }
+      onClose={onClose}
+      wide
+    >
       <form className="modal-body" onSubmit={submit}>
         <div className="form-grid">
           <div className="field">
@@ -499,7 +503,7 @@ export function RecipeForm({
             required
           />
           <Field
-            label="Rendimiento esperado (%)"
+            label="Parte que sale buena (%)"
             name="expectedYieldPercent"
             type="number"
             initialValue={existingVersion?.expectedYieldPercent ?? 100}
@@ -523,7 +527,7 @@ export function RecipeForm({
                 ])
               }
             >
-              ＋ Material
+              Agregar material
             </button>
           </div>
           {materials.length ? (
@@ -550,7 +554,9 @@ export function RecipeForm({
                     min="0.0001"
                     step="0.0001"
                     value={component.quantity}
-                    onChange={(event) => updateComponent(index, { quantity: Number(event.target.value) })}
+                    onChange={(event) =>
+                      updateComponent(index, { quantity: Number(event.target.value) })
+                    }
                     required
                   />
                   <span className="field-hint">{material?.unit ?? "unidad"}</span>
@@ -559,7 +565,9 @@ export function RecipeForm({
                     type="button"
                     aria-label="Quitar material"
                     disabled={components.length <= 1}
-                    onClick={() => setComponents((current) => current.filter((_, i) => i !== index))}
+                    onClick={() =>
+                      setComponents((current) => current.filter((_, i) => i !== index))
+                    }
                   >
                     ×
                   </button>
@@ -567,13 +575,20 @@ export function RecipeForm({
               );
             })
           ) : (
-            <p className="field-hint">Registra materias primas o insumos antes de crear una receta.</p>
+            <p className="field-hint">
+              Registra materias primas o insumos antes de crear una receta.
+            </p>
           )}
           <p className="field-hint">
-            Las cantidades usan la unidad de inventario del material. El rendimiento estima la salida buena; la merma real se confirma al cerrar la orden.
+            Las cantidades usan la unidad de inventario del material. El rendimiento estima la
+            salida buena; la merma real se confirma al cerrar la orden.
           </p>
         </div>
-        <ModalFooter onClose={onClose} submitLabel="Guardar borrador" disabled={!materials.length || !selectedProductId} />
+        <ModalFooter
+          onClose={onClose}
+          submitLabel="Guardar borrador"
+          disabled={!materials.length || !selectedProductId}
+        />
       </form>
     </Modal>
   );
@@ -632,7 +647,7 @@ export function SaleForm({
       <form className="modal-body" onSubmit={submit}>
         <div className="form-grid">
           <Field label="Fecha" name="date" type="date" initialValue={today()} required />
-          <Field label="Vencimiento de saldo" name="dueDate" type="date" />
+          <Field label="Fecha para pagar el saldo" name="dueDate" type="date" />
           <ContactSelect
             contacts={customers}
             role="customer"
@@ -653,7 +668,7 @@ export function SaleForm({
                     ])
                   }
                 >
-                  ＋ Producto
+                  Agregar producto
                 </button>
               </div>
               {lines.map((line, index) => (
@@ -696,7 +711,7 @@ export function SaleForm({
                   <label className="sale-line-field">
                     <span>Precio unitario (COP)</span>
                     <input
-                      aria-label="Precio unitario COP"
+                      aria-label="Precio por unidad en pesos"
                       type="number"
                       min="0"
                       step="1"
@@ -736,7 +751,7 @@ export function SaleForm({
             />
           </div>
           <Field
-            label="Abono inicial COP"
+            label="Abono de hoy (pesos)"
             name="initialPayment"
             type="number"
             initialValue="0"
@@ -745,7 +760,7 @@ export function SaleForm({
             required
           />
           <SelectField
-            label="Medio del abono"
+            label="Cómo pagó"
             name="initialPaymentMethod"
             options={["Efectivo", "Transferencia", "Tarjeta", "Otro"].map((value) => ({
               value,
@@ -753,7 +768,7 @@ export function SaleForm({
             }))}
           />
           <SelectField
-            label="Cuenta de caja o banco"
+            label="Caja o banco"
             name="initialPaymentAccountId"
             options={[
               { value: "", label: "Sin asignar" },
@@ -763,7 +778,7 @@ export function SaleForm({
             ]}
           />
           <SelectField
-            label="Seguimiento de factura"
+            label="Factura"
             name="invoiceFollowUpStatus"
             initialValue={invoiceStatus}
             onChange={(value) => {
@@ -776,22 +791,22 @@ export function SaleForm({
             }}
             options={[
               { value: "to_review", label: "Por revisar" },
-              { value: "registered_externally", label: "Registrada por fuera de Pyme360" },
-              { value: "not_applicable", label: "No aplica, según revisión" },
+              { value: "registered_externally", label: "La hice por fuera de Pyme360" },
+              { value: "not_applicable", label: "No aplica, ya lo revisé" },
             ]}
           />
-          <Field label="Número externo (opcional)" name="externalInvoiceNumber" />
-          <Field label="Fecha externa (opcional)" name="externalInvoiceDate" type="date" />
+          <Field label="Número de la factura (opcional)" name="externalInvoiceNumber" />
+          <Field label="Fecha de la factura (opcional)" name="externalInvoiceDate" type="date" />
           <div className="field full">
             <div className="summary-total">
-              <span>Estimación con descuento e IVA configurado</span>
+              <span>Total aproximado con descuento e IVA</span>
               <strong>{formatMoney(estimatedTotal)}</strong>
             </div>
           </div>
         </div>
         <div className="notice">
-          El IVA es una estimación configurable. El seguimiento de factura es manual y no transmite
-          documentos.
+          El IVA es un cálculo aproximado. Elegir una opción de factura solo te sirve de
+          recordatorio: no envía nada a la DIAN.
         </div>
         <ModalFooter onClose={onClose} submitLabel="Guardar venta" />
       </form>
@@ -819,7 +834,9 @@ export function PurchaseForm({
   const suppliers = state.contacts.filter((contact) => contact.role !== "customer");
   const materials = state.products.filter((product) => product.type !== "finished");
   const [supplierId, setSupplierId] = useState(purchase?.supplierId ?? "");
-  const [status, setStatus] = useState<PurchaseStatus>(purchase?.status ?? initialStatus ?? "received");
+  const [status, setStatus] = useState<PurchaseStatus>(
+    initialStatus ?? purchase?.status ?? "received",
+  );
   const suggestedProduct = materials.find((product) => product.id === initialProductId);
   const suggestedQuantity = initialQuantity ?? 1;
   const [lines, setLines] = useState(
@@ -827,11 +844,13 @@ export function PurchaseForm({
       productId: line.productId,
       quantity: line.quantity,
       lineTotal: line.lineTotal,
-    })) ?? [{
-      productId: suggestedProduct?.id ?? "",
-      quantity: suggestedQuantity,
-      lineTotal: Math.round(suggestedQuantity * (suggestedProduct?.unitCost ?? 0)),
-    }],
+    })) ?? [
+      {
+        productId: suggestedProduct?.id ?? "",
+        quantity: suggestedQuantity,
+        lineTotal: Math.round(suggestedQuantity * (suggestedProduct?.unitCost ?? 0)),
+      },
+    ],
   );
   const total = lines.reduce((sum, line) => sum + line.lineTotal, 0);
   function changeLine(index: number, partial: Partial<(typeof lines)[number]>) {
@@ -866,7 +885,7 @@ export function PurchaseForm({
             required
           />
           <Field
-            label="Vencimiento del pago"
+            label="Fecha para pagar"
             name="dueDate"
             type="date"
             initialValue={purchase?.dueDate ?? ""}
@@ -904,8 +923,14 @@ export function PurchaseForm({
                     ])
                   }
                 >
-                  ＋ Material
+                  Agregar material
                 </button>
+              </div>
+              <div className="line-row line-row-head" aria-hidden="true">
+                <span>Material</span>
+                <span>Cantidad</span>
+                <span>Costo total (pesos)</span>
+                <span />
               </div>
               {lines.map((line, index) => (
                 <div className="line-row" key={index}>
@@ -922,8 +947,8 @@ export function PurchaseForm({
                     <option value="">Selecciona un material</option>
                     {materials.map((product) => (
                       <option key={product.id} value={product.id}>
-                        {product.name} · {product.sku} ({formatQuantity(product.stock, product.unit)}
-                        )
+                        {product.name} · {product.sku} (
+                        {formatQuantity(product.stock, product.unit)})
                       </option>
                     ))}
                   </select>
@@ -943,7 +968,7 @@ export function PurchaseForm({
                     }}
                   />
                   <input
-                    aria-label="Costo total COP"
+                    aria-label="Costo total en pesos"
                     type="number"
                     min="0"
                     step="1"
@@ -965,13 +990,14 @@ export function PurchaseForm({
                 </div>
               ))}
               <span className="field-hint">
-                El costo se registra por renglón. El costo sugerido del catálogo es una referencia: reemplázalo por el valor cotizado por el proveedor. Las compras por recibir no cambian las existencias.
+                Escribe lo que cobró el proveedor por cada material. Las compras por recibir no
+                cambian el inventario.
               </span>
             </div>
           </div>
           <div className="field full">
             <div className="summary-total">
-              <span>Total de compra</span>
+              <span>Total de la compra</span>
               <strong>{formatMoney(total)}</strong>
             </div>
           </div>
@@ -999,9 +1025,14 @@ export function ProductionForm({
 }) {
   const available = products.filter((product) =>
     Boolean(
-      recipes.find((recipe) => recipe.productId === product.id)?.versions.find(
-        (version) => version.id === recipes.find((recipe) => recipe.productId === product.id)?.activeVersionId && version.status === "active",
-      ),
+      recipes
+        .find((recipe) => recipe.productId === product.id)
+        ?.versions.find(
+          (version) =>
+            version.id ===
+              recipes.find((recipe) => recipe.productId === product.id)?.activeVersionId &&
+            version.status === "active",
+        ),
     ),
   );
   const [selectedProductId, setSelectedProductId] = useState(
@@ -1022,7 +1053,13 @@ export function ProductionForm({
   const shortageLines = requirements.flatMap((requirement) => {
     const material = products.find((product) => product.id === requirement.productId);
     if (!material || material.stock >= requirement.quantity) return [];
-    return [{ material, quantity: requirement.quantity, shortfall: requirement.quantity - material.stock }];
+    return [
+      {
+        material,
+        quantity: requirement.quantity,
+        shortfall: requirement.quantity - material.stock,
+      },
+    ];
   });
   const expectedGoodOutput = activeVersion
     ? Number((quantity * (activeVersion.expectedYieldPercent / 100)).toFixed(4))
@@ -1055,7 +1092,10 @@ export function ProductionForm({
             </select>
           </div>
           <div className="grid min-w-0 gap-1.5">
-            <label className="text-[0.875rem] font-semibold text-label" htmlFor="production-quantity">
+            <label
+              className="text-[0.875rem] font-semibold text-label"
+              htmlFor="production-quantity"
+            >
               Unidades a producir
             </label>
             <input
@@ -1074,16 +1114,25 @@ export function ProductionForm({
         {activeVersion && (
           <div className="panel-body">
             <p className="field-hint">
-              Fórmula v{activeVersion.versionNumber}: lote base {formatQuantity(activeVersion.baseQuantity, selectedProduct?.unit)} · rendimiento esperado {formatNumber(activeVersion.expectedYieldPercent)} %.
+              Fórmula v{activeVersion.versionNumber}: lote base{" "}
+              {formatQuantity(activeVersion.baseQuantity, selectedProduct?.unit)} · rendimiento
+              esperado {formatNumber(activeVersion.expectedYieldPercent)} %.
             </p>
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Material</th><th>Requerido</th><th>Disponible</th><th>Estado</th></tr>
+                  <tr>
+                    <th>Material</th>
+                    <th>Requerido</th>
+                    <th>Disponible</th>
+                    <th>Estado</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {requirements.map((requirement) => {
-                    const material = products.find((product) => product.id === requirement.productId);
+                    const material = products.find(
+                      (product) => product.id === requirement.productId,
+                    );
                     if (!material) return null;
                     const shortfall = Math.max(0, requirement.quantity - material.stock);
                     return (
@@ -1091,7 +1140,11 @@ export function ProductionForm({
                         <td>{material.name}</td>
                         <td>{formatQuantity(requirement.quantity, material.unit)}</td>
                         <td>{formatQuantity(material.stock, material.unit)}</td>
-                        <td>{shortfall > 0 ? `Faltan ${formatQuantity(shortfall, material.unit)}` : "Disponible"}</td>
+                        <td>
+                          {shortfall > 0
+                            ? `Faltan ${formatQuantity(shortfall, material.unit)}`
+                            : "Disponible"}
+                        </td>
                       </tr>
                     );
                   })}
@@ -1102,20 +1155,31 @@ export function ProductionForm({
         )}
         <div className="notice production-cost-preview" aria-live="polite">
           <strong>Salida buena esperada</strong>
-          <span>{activeVersion ? `${formatQuantity(expectedGoodOutput, selectedProduct?.unit)}` : "Sin receta activa"}</span>
+          <span>
+            {activeVersion
+              ? `${formatQuantity(expectedGoodOutput, selectedProduct?.unit)}`
+              : "Sin receta activa"}
+          </span>
         </div>
         <div className="notice production-cost-preview" aria-live="polite">
           <strong>Estimado directo de materiales</strong>
           {estimate.totalCost === null ? (
             <span>
-              No disponible. Configura un costo unitario mayor que cero para: {estimate.missingCostProducts.join(", ") || "los materiales de la receta"}.
+              No disponible. Configura un costo unitario mayor que cero para:{" "}
+              {estimate.missingCostProducts.join(", ") || "los materiales de la receta"}.
             </span>
           ) : (
             <span>
-              {formatMoney(estimate.totalCost)} total · {estimate.costPerOutputUnit === null ? "costo por unidad no disponible" : `${formatMoney(estimate.costPerOutputUnit)} por unidad planeada`}
+              {formatMoney(estimate.totalCost)} total ·{" "}
+              {estimate.costPerOutputUnit === null
+                ? "costo por unidad no disponible"
+                : `${formatMoney(estimate.costPerOutputUnit)} por unidad planeada`}
             </span>
           )}
-          <span>Es un estimado basado en costos de catálogo; no incluye mano de obra, energía ni costos indirectos.</span>
+          <span>
+            Es un estimado basado en costos de catálogo; no incluye mano de obra, energía ni costos
+            indirectos.
+          </span>
         </div>
         <div className="notice">
           Al guardar la orden se descuentan los materiales de la receta. Al completarla, se registra
@@ -1123,10 +1187,21 @@ export function ProductionForm({
         </div>
         {shortageLines.length > 0 && (
           <div className="notice" role="alert">
-            No se puede crear la orden: falta {shortageLines.map((line) => `${line.material.name} (${formatQuantity(line.shortfall, line.material.unit)})`).join(", ")}.
+            No se puede crear la orden: falta{" "}
+            {shortageLines
+              .map(
+                (line) =>
+                  `${line.material.name} (${formatQuantity(line.shortfall, line.material.unit)})`,
+              )
+              .join(", ")}
+            .
           </div>
         )}
-        <ModalFooter onClose={onClose} submitLabel="Crear orden" disabled={!activeVersion || shortageLines.length > 0 || quantity <= 0} />
+        <ModalFooter
+          onClose={onClose}
+          submitLabel="Crear orden"
+          disabled={!activeVersion || shortageLines.length > 0 || quantity <= 0}
+        />
       </form>
     </Modal>
   );
@@ -1148,8 +1223,8 @@ export function ResourceReadingForm({
   const activities: Record<ResourceKind, Array<{ value: ReadingActivity; label: string }>> = {
     electricity: [{ value: "consumption", label: "Consumo" }],
     water: [
-      { value: "withdrawal", label: "Retirada" },
-      { value: "discharge", label: "Descarga" },
+      { value: "withdrawal", label: "Agua que entra" },
+      { value: "discharge", label: "Agua que sale" },
     ],
     fuel: [{ value: "consumption", label: "Consumo" }],
     material: [{ value: "consumption", label: "Consumido" }],
@@ -1180,9 +1255,7 @@ export function ResourceReadingForm({
       activity: rawActivity,
       quantity: readNumber(form, "quantity"),
       unit: readString(form, "unit"),
-      billedAmount: readString(form, "billedAmount")
-        ? readNumber(form, "billedAmount")
-        : undefined,
+      billedAmount: readString(form, "billedAmount") ? readNumber(form, "billedAmount") : undefined,
       periodStart: readString(form, "periodStart"),
       periodEnd: readString(form, "periodEnd"),
       siteId: "site-main",
@@ -1195,10 +1268,7 @@ export function ResourceReadingForm({
     });
   }
   return (
-    <Modal
-      title={reading ? "Editar lectura ambiental" : "Registrar lectura ambiental"}
-      onClose={onClose}
-    >
+    <Modal title={reading ? "Editar consumo" : "Registrar consumo"} onClose={onClose}>
       <form className="modal-body" onSubmit={submit}>
         <div className="form-grid">
           <SelectField
@@ -1286,7 +1356,7 @@ export function ResourceReadingForm({
             </div>
           )}
           <SelectField
-            label="Calidad del dato"
+            label="Qué tan seguro es el dato"
             name="quality"
             initialValue={reading?.quality ?? "confirmed"}
             options={[
@@ -1303,12 +1373,12 @@ export function ResourceReadingForm({
           />
         </div>
         <div className="notice">
-          Cada lectura queda separada por recurso y período. Para cambios en la factura, registra
-          los días exactos del ciclo.
+          Cada consumo queda aparte. Si tu recibo no cubre el mes completo, escribe sus fechas
+          exactas.
         </div>
         <ModalFooter
           onClose={onClose}
-          submitLabel={reading ? "Guardar cambios" : "Guardar lectura"}
+          submitLabel={reading ? "Guardar cambios" : "Guardar consumo"}
         />
       </form>
     </Modal>
@@ -1350,7 +1420,7 @@ export function ReceiptReviewForm({
     });
   }
   return (
-    <Modal title="Revisar recibo ambiental" onClose={onClose} wide>
+    <Modal title="Revisa tu recibo" onClose={onClose} wide>
       <form className="modal-body" onSubmit={submit}>
         <div className={`notice${extraction.warnings.length ? " warning" : ""}`}>
           <strong>
@@ -1687,21 +1757,21 @@ export function EnvironmentalActionForm({
     });
   }
   return (
-    <Modal title="Nueva acción ambiental" onClose={onClose}>
+    <Modal title="Nueva medida de ahorro" onClose={onClose}>
       <form className="modal-body" onSubmit={submit}>
         <div className="form-grid">
           <SelectField
-            label="Indicador asociado"
+            label="Qué quieres mejorar"
             name="indicatorId"
             initialValue={initial?.indicatorId}
             options={indicatorOptions}
           />
-          <Field label="Acción" name="title" initialValue={initial?.title} required />
+          <Field label="Medida" name="title" initialValue={initial?.title} required />
           <Field label="Responsable" name="owner" required />
           <Field label="Fecha límite" name="dueDate" type="date" required />
           <Field label="Notas" name="notes" initialValue={initial?.notes} />
         </div>
-        <ModalFooter onClose={onClose} submitLabel="Crear acción" />
+        <ModalFooter onClose={onClose} submitLabel="Agregar medida" />
       </form>
     </Modal>
   );
@@ -1718,7 +1788,7 @@ export function EnvironmentalConfigForm({
 }) {
   const defaultProfile = {
     countryCode: "CO",
-    region: "Antioquia",
+    region: "Boyacá",
     sectorCode: "1104",
     outputUnit: "L",
     assumedMonthlyOutput: 100000,
@@ -1745,7 +1815,7 @@ export function EnvironmentalConfigForm({
       geography: readString(form, "geography") || "Colombia SIN",
       benchmarking: {
         countryCode: readString(form, "benchmarkCountry") || "CO",
-        region: readString(form, "benchmarkRegion") || "Antioquia",
+        region: readString(form, "benchmarkRegion") || "Boyacá",
         sectorCode: readString(form, "benchmarkSector") || "1104",
         outputUnit: "L",
         assumedMonthlyOutput: readNumber(form, "assumedMonthlyOutput"),
@@ -1760,7 +1830,7 @@ export function EnvironmentalConfigForm({
           <Field
             label="Proveedor"
             name="providerName"
-            initialValue={config?.providerName ?? "Enel Colombia"}
+            initialValue={config?.providerName ?? "EBSA"}
             required
           />
           <Field
@@ -1875,7 +1945,7 @@ export function PaymentForm({
         <div className="form-grid">
           <Field label="Fecha" name="date" type="date" initialValue={today()} required />
           <Field
-            label="Valor del abono COP"
+            label="Valor del abono (pesos)"
             name="amount"
             type="number"
             initialValue={balance}
@@ -1885,7 +1955,7 @@ export function PaymentForm({
             required
           />
           <SelectField
-            label="Medio de pago"
+            label="Cómo se pagó"
             name="method"
             options={["Efectivo", "Transferencia", "Tarjeta", "Otro"].map((value) => ({
               value,
@@ -1893,7 +1963,7 @@ export function PaymentForm({
             }))}
           />
           <SelectField
-            label="Cuenta de caja o banco"
+            label="Caja o banco"
             name="accountId"
             options={[
               { value: "", label: "Sin asignar" },
@@ -1941,7 +2011,7 @@ export function PurchasePaymentForm({
         <div className="form-grid">
           <Field label="Fecha" name="date" type="date" initialValue={today()} required />
           <Field
-            label="Valor del pago COP"
+            label="Valor del pago (pesos)"
             name="amount"
             type="number"
             initialValue={balance}
@@ -1951,7 +2021,7 @@ export function PurchasePaymentForm({
             required
           />
           <SelectField
-            label="Medio de pago"
+            label="Cómo se pagó"
             name="method"
             options={["Efectivo", "Transferencia", "Tarjeta", "Otro"].map((value) => ({
               value,
@@ -1959,7 +2029,7 @@ export function PurchasePaymentForm({
             }))}
           />
           <SelectField
-            label="Cuenta de caja o banco"
+            label="Caja o banco"
             name="accountId"
             options={[
               { value: "", label: "Sin asignar" },
@@ -1992,10 +2062,10 @@ export function FinancialAccountForm({
     );
   }
   return (
-    <Modal title="Nueva cuenta de caja o banco" onClose={onClose}>
+    <Modal title="Agregar caja o banco" onClose={onClose}>
       <form className="modal-body" onSubmit={submit}>
         <div className="form-grid">
-          <Field label="Nombre de la cuenta" name="name" required />
+          <Field label="Nombre" name="name" required />
           <SelectField
             label="Tipo"
             name="type"
@@ -2005,7 +2075,7 @@ export function FinancialAccountForm({
             ]}
           />
           <Field
-            label="Saldo inicial COP"
+            label="Cuánto hay hoy (pesos)"
             name="openingBalance"
             type="number"
             initialValue="0"
@@ -2015,10 +2085,9 @@ export function FinancialAccountForm({
           />
         </div>
         <div className="notice">
-          Este saldo es el punto de partida del control interno; no se concilia automáticamente con
-          el extracto bancario.
+          Este valor es tu punto de partida. No se compara solo con el extracto del banco.
         </div>
-        <ModalFooter onClose={onClose} submitLabel="Crear cuenta" />
+        <ModalFooter onClose={onClose} submitLabel="Guardar" />
       </form>
     </Modal>
   );
@@ -2055,19 +2124,19 @@ export function ManualCashMovementForm({
     });
   }
   return (
-    <Modal title="Registrar movimiento de dinero" onClose={onClose}>
+    <Modal title="Registrar entrada o salida" onClose={onClose}>
       <form className="modal-body" onSubmit={submit}>
         <div className="form-grid">
           <SelectField
-            label="Tipo de movimiento"
+            label="¿Entró o salió dinero?"
             name="direction"
             options={[
-              { value: "in", label: "Ingreso" },
-              { value: "out", label: "Egreso" },
+              { value: "in", label: "Entró dinero" },
+              { value: "out", label: "Salió dinero" },
             ]}
           />
           <SelectField
-            label="Cuenta"
+            label="Caja o banco"
             name="accountId"
             required
             options={accounts
@@ -2075,19 +2144,19 @@ export function ManualCashMovementForm({
               .map((account) => ({ value: account.id, label: account.name }))}
           />
           <Field label="Fecha" name="date" type="date" initialValue={today()} required />
-          <Field label="Valor COP" name="amount" type="number" min="1" step="1" required />
-          <Field label="Categoría" name="category" required />
+          <Field label="Valor (pesos)" name="amount" type="number" min="1" step="1" required />
+          <Field label="Concepto" name="category" required />
           <SelectField
-            label="Medio"
+            label="Cómo se pagó"
             name="method"
             options={["Efectivo", "Transferencia", "Tarjeta", "Otro"].map((value) => ({
               value,
               label: value,
             }))}
           />
-          <Field label="Descripción" name="description" required />
+          <Field label="Detalle" name="description" required />
         </div>
-        <ModalFooter onClose={onClose} submitLabel="Guardar movimiento" />
+        <ModalFooter onClose={onClose} submitLabel="Guardar" />
       </form>
     </Modal>
   );
@@ -2108,15 +2177,14 @@ export function LegacyPayableReviewForm({
     onSave(readNumber(form, "amount"), readString(form, "dueDate"));
   }
   return (
-    <Modal title={`Conciliar compra ${purchase.number}`} onClose={onClose}>
+    <Modal title={`Confirmar saldo de ${purchase.number}`} onClose={onClose}>
       <form className="modal-body" onSubmit={submit}>
         <div className="notice warning">
-          No se registraron pagos históricos. Indica el saldo realmente pendiente al iniciar el
-          control financiero.
+          Esta compra es de antes de llevar el control de pagos. Escribe cuánto falta por pagar hoy.
         </div>
         <div className="form-grid">
           <Field
-            label="Saldo pendiente confirmado COP"
+            label="Lo que falta por pagar (pesos)"
             name="amount"
             type="number"
             initialValue={purchase.total}
@@ -2126,7 +2194,7 @@ export function LegacyPayableReviewForm({
             required
           />
           <Field
-            label="Fecha de vencimiento (opcional)"
+            label="Fecha para pagar (opcional)"
             name="dueDate"
             type="date"
             initialValue={purchase.dueDate ?? ""}
@@ -2149,17 +2217,17 @@ export function StockForm({
 }) {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSave(readNumber(event.currentTarget, "countedQuantity"), readString(event.currentTarget, "reason"));
+    onSave(
+      readNumber(event.currentTarget, "countedQuantity"),
+      readString(event.currentTarget, "reason"),
+    );
   }
   return (
-    <Modal title={`Conteo físico · ${product.name}`} onClose={onClose}>
+    <Modal title={`Contar · ${product.name}`} onClose={onClose}>
       <form className="modal-body" onSubmit={submit}>
         <div className="notice">
-          Saldo en sistema:{" "}
-          <strong>
-            {formatQuantity(product.stock, product.unit)}
-          </strong>
-          . Registra la cantidad que encontraste físicamente.
+          Saldo en sistema: <strong>{formatQuantity(product.stock, product.unit)}</strong>. Registra
+          la cantidad que encontraste físicamente.
         </div>
         <div className="form-grid">
           <Field
@@ -2171,7 +2239,7 @@ export function StockForm({
             step="0.0001"
             required
           />
-          <Field label="Motivo o referencia del conteo" name="reason" initialValue="Conteo físico" required />
+          <Field label="Motivo del conteo" name="reason" initialValue="Conteo físico" required />
         </div>
         <ModalFooter onClose={onClose} submitLabel="Conciliar existencia" />
       </form>
@@ -2196,14 +2264,14 @@ export function CompleteProductionForm({
     );
   }
   return (
-    <Modal title={`Completar orden ${order.number}`} onClose={onClose}>
+    <Modal title={`Terminar orden ${order.number}`} onClose={onClose}>
       <form className="modal-body" onSubmit={submit}>
         <div className="notice">
           Se procesaron {formatNumber(order.quantity)} unidades de {order.productName}.
         </div>
         <div className="form-grid">
           <Field
-            label="Unidades de desperdicio"
+            label="Unidades perdidas"
             name="wasteQuantity"
             type="number"
             initialValue="0"

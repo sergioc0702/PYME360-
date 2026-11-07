@@ -923,9 +923,9 @@ def empty_sync_state() -> dict:
             "contingencyRangeFrom": None, "contingencyRangeTo": None,
         },
         "environmentalConfig": {
-            "providerId": "local-receipt", "providerName": "Enel Colombia", "accountNumber": "",
+            "providerId": "local-receipt", "providerName": "EBSA", "accountNumber": "",
             "businessUnit": "", "geography": "Colombia SIN",
-            "benchmarking": {"countryCode": "CO", "region": "Antioquia", "sectorCode": "1104",
+            "benchmarking": {"countryCode": "CO", "region": "Boyacá", "sectorCode": "1104",
                               "outputUnit": "L", "assumedMonthlyOutput": 100000,
                               "preferredSources": ["dane-eai", "xm", "unsd", "eia-mecs", "company-public"]},
         },
@@ -940,9 +940,9 @@ def empty_sync_state() -> dict:
         "contingencyRangeFrom": None, "contingencyRangeTo": None,
     }
     state["environmentalConfig"] = {
-        "providerId": "local-receipt", "providerName": "Enel Colombia", "accountNumber": "",
+        "providerId": "local-receipt", "providerName": "EBSA", "accountNumber": "",
         "businessUnit": "", "geography": "Colombia SIN",
-        "benchmarking": {"countryCode": "CO", "region": "Antioquia", "sectorCode": "1104",
+        "benchmarking": {"countryCode": "CO", "region": "Boyacá", "sectorCode": "1104",
                           "outputUnit": "L", "assumedMonthlyOutput": 100000,
                           "preferredSources": ["dane-eai", "xm", "unsd", "eia-mecs", "company-public"]},
     }
@@ -2014,9 +2014,9 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                 "contingencyRangeFrom": None, "contingencyRangeTo": None,
             },
             "environmentalConfig": {
-                "providerId": "local-receipt", "providerName": "Enel Colombia", "accountNumber": "",
+                "providerId": "local-receipt", "providerName": "EBSA", "accountNumber": "",
                 "businessUnit": "", "geography": "Colombia SIN",
-                "benchmarking": {"countryCode": "CO", "region": "Antioquia", "sectorCode": "1104",
+                "benchmarking": {"countryCode": "CO", "region": "Boyacá", "sectorCode": "1104",
                                   "outputUnit": "L", "assumedMonthlyOutput": 100000,
                                   "preferredSources": ["dane-eai", "xm", "unsd", "eia-mecs", "company-public"]},
             },

@@ -1,0 +1,1030 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-07T05:23:30Z",
+  "title": "Design System: Pyme360",
+  "extensions": {
+    "colorMeta": {
+      "green": {
+        "role": "primary",
+        "displayName": "Verde Monte",
+        "canonical": "#1f4d33",
+        "tonalRamp": [
+          "#000f05",
+          "#0a2c1a",
+          "#214c33",
+          "#3f6d51",
+          "#618f72",
+          "#8ab097",
+          "#b4d2be",
+          "#e0f5e7"
+        ]
+      },
+      "green-dark": {
+        "role": "primary",
+        "displayName": "Verde Monte Hondo",
+        "canonical": "#16391f",
+        "tonalRamp": [
+          "#010f04",
+          "#122b18",
+          "#2a4b31",
+          "#476b4e",
+          "#698d6f",
+          "#90ae95",
+          "#b9d1bc",
+          "#e3f4e5"
+        ]
+      },
+      "green-soft": {
+        "role": "primary",
+        "displayName": "Verde Rocío",
+        "canonical": "#dfe9cf",
+        "tonalRamp": [
+          "#090d04",
+          "#222718",
+          "#3e4531",
+          "#5d654e",
+          "#7e866f",
+          "#a1a895",
+          "#c6ccbc",
+          "#ecf0e5"
+        ]
+      },
+      "field-0": {
+        "role": "tertiary",
+        "displayName": "Verde Hierba",
+        "canonical": "#a8c66c",
+        "tonalRamp": [
+          "#080e00",
+          "#1e2a00",
+          "#374a00",
+          "#536c03",
+          "#738e36",
+          "#98b06b",
+          "#bfd29d",
+          "#e7f5cf"
+        ]
+      },
+      "field-1": {
+        "role": "tertiary",
+        "displayName": "Ocre de Trigo",
+        "canonical": "#e0b64a",
+        "tonalRamp": [
+          "#110a00",
+          "#302301",
+          "#533f01",
+          "#795d05",
+          "#a27c00",
+          "#c1a151",
+          "#e0c78b",
+          "#ffedc3"
+        ]
+      },
+      "field-2": {
+        "role": "tertiary",
+        "displayName": "Verde Laguna",
+        "canonical": "#7fb3a6",
+        "tonalRamp": [
+          "#000f0b",
+          "#052c25",
+          "#1b4c42",
+          "#3a6c61",
+          "#5c8e82",
+          "#87afa5",
+          "#b2d1c9",
+          "#def4ee"
+        ]
+      },
+      "field-3": {
+        "role": "tertiary",
+        "displayName": "Lila Flor de Papa",
+        "canonical": "#c9a6d8",
+        "tonalRamp": [
+          "#120518",
+          "#301b39",
+          "#51355d",
+          "#735380",
+          "#9574a2",
+          "#b599c0",
+          "#d6c0df",
+          "#f8e8ff"
+        ]
+      },
+      "field-4": {
+        "role": "tertiary",
+        "displayName": "Barro Cocido",
+        "canonical": "#d98f5a",
+        "tonalRamp": [
+          "#170600",
+          "#3c1b01",
+          "#663201",
+          "#914d11",
+          "#b56f3b",
+          "#d1966d",
+          "#edbe9e",
+          "#ffeadd"
+        ]
+      },
+      "field-ink": {
+        "role": "neutral",
+        "displayName": "Tinta de Campo",
+        "canonical": "#16301f",
+        "tonalRamp": [
+          "#030e06",
+          "#172a1d",
+          "#304937",
+          "#4d6955",
+          "#6e8a76",
+          "#94ac9b",
+          "#bccfc1",
+          "#e5f3e9"
+        ]
+      },
+      "red": {
+        "role": "secondary",
+        "displayName": "Rojo Barro",
+        "canonical": "#a83f1a",
+        "tonalRamp": [
+          "#1c0300",
+          "#451000",
+          "#742201",
+          "#a33a14",
+          "#c85f3c",
+          "#e38a6e",
+          "#fdb59f",
+          "#ffe9e3"
+        ]
+      },
+      "red-strong": {
+        "role": "secondary",
+        "displayName": "Rojo Barro Fuerte",
+        "canonical": "#8a3213",
+        "tonalRamp": [
+          "#1b0300",
+          "#461000",
+          "#742201",
+          "#9b4224",
+          "#c06548",
+          "#dc8e76",
+          "#f7b8a4",
+          "#fee9e3"
+        ]
+      },
+      "red-soft": {
+        "role": "secondary",
+        "displayName": "Rojo Barro Suave",
+        "canonical": "#f7e3d8",
+        "tonalRamp": [
+          "#110906",
+          "#2d221c",
+          "#4d3e36",
+          "#6e5d54",
+          "#907e75",
+          "#b1a299",
+          "#d2c6c0",
+          "#f5ece8"
+        ]
+      },
+      "amber": {
+        "role": "secondary",
+        "displayName": "Ámbar Tostado",
+        "canonical": "#744b00",
+        "tonalRamp": [
+          "#130900",
+          "#352000",
+          "#5b3a02",
+          "#815816",
+          "#a4793e",
+          "#c29e6f",
+          "#e1c4a0",
+          "#ffebd3"
+        ]
+      },
+      "warning-surface": {
+        "role": "secondary",
+        "displayName": "Fondo de Advertencia",
+        "canonical": "#f0eade",
+        "tonalRamp": [
+          "#0d0b07",
+          "#28251e",
+          "#464138",
+          "#666156",
+          "#878277",
+          "#a9a49c",
+          "#ccc9c2",
+          "#f1eee9"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Neblina Verde",
+        "canonical": "#f3f6ee",
+        "tonalRamp": [
+          "#0b0c09",
+          "#242621",
+          "#41433d",
+          "#60625c",
+          "#81837c",
+          "#a4a6a0",
+          "#c8cac5",
+          "#eeefec"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Blanco",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "surface-muted": {
+        "role": "neutral",
+        "displayName": "Pasto Seco",
+        "canonical": "#e8eedf",
+        "tonalRamp": [
+          "#0a0c07",
+          "#23261e",
+          "#3f4438",
+          "#5e6357",
+          "#7f8577",
+          "#a3a79c",
+          "#c7cbc2",
+          "#edf0e9"
+        ]
+      },
+      "surface-hover": {
+        "role": "neutral",
+        "displayName": "Pasto Seco Hover",
+        "canonical": "#dde6d0",
+        "tonalRamp": [
+          "#090d05",
+          "#22271a",
+          "#3e4534",
+          "#5d6552",
+          "#7e8672",
+          "#a1a897",
+          "#c6cbbe",
+          "#ecf0e7"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Tinta de Monte",
+        "canonical": "#16301f",
+        "tonalRamp": [
+          "#030e06",
+          "#172a1d",
+          "#304937",
+          "#4d6955",
+          "#6e8a76",
+          "#94ac9b",
+          "#bccfc1",
+          "#e5f3e9"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Musgo",
+        "canonical": "#3f5a48",
+        "tonalRamp": [
+          "#030e07",
+          "#172a1e",
+          "#304938",
+          "#4d6956",
+          "#6e8a77",
+          "#95ac9c",
+          "#bccfc2",
+          "#e5f2e9"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Lindero",
+        "canonical": "#cfdcc4",
+        "tonalRamp": [
+          "#080d05",
+          "#20281a",
+          "#3c4633",
+          "#5a6651",
+          "#7b8771",
+          "#9fa997",
+          "#c4ccbe",
+          "#ebf1e6"
+        ]
+      },
+      "line-soft": {
+        "role": "neutral",
+        "displayName": "Lindero Suave",
+        "canonical": "#dfe7d5",
+        "tonalRamp": [
+          "#090c06",
+          "#22271d",
+          "#3f4537",
+          "#5d6455",
+          "#7e8575",
+          "#a2a89a",
+          "#c6cbc0",
+          "#ecf0e8"
+        ]
+      },
+      "control-border": {
+        "role": "neutral",
+        "displayName": "Borde de Control",
+        "canonical": "#6d8473",
+        "tonalRamp": [
+          "#050e07",
+          "#1a291e",
+          "#344839",
+          "#516857",
+          "#728978",
+          "#98ab9c",
+          "#bfcec2",
+          "#e7f2e9"
+        ]
+      },
+      "focus-ring": {
+        "role": "neutral",
+        "displayName": "Anillo de Foco",
+        "canonical": "#176644",
+        "tonalRamp": [
+          "#000f06",
+          "#002e1b",
+          "#024f32",
+          "#26714e",
+          "#4c936f",
+          "#7cb495",
+          "#aad5bc",
+          "#d9f7e5"
+        ]
+      },
+      "on-primary": {
+        "role": "neutral",
+        "displayName": "Texto sobre Verde",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "sidebar-canvas": {
+        "role": "neutral",
+        "displayName": "Menú: canvas",
+        "canonical": "#1f4d33",
+        "tonalRamp": [
+          "#000f05",
+          "#0a2c1a",
+          "#214c33",
+          "#3f6d51",
+          "#618f72",
+          "#8ab097",
+          "#b4d2be",
+          "#e0f5e7"
+        ]
+      },
+      "sidebar-line": {
+        "role": "neutral",
+        "displayName": "Menú: line",
+        "canonical": "#386b4e",
+        "tonalRamp": [
+          "#000f06",
+          "#062d1a",
+          "#1c4d33",
+          "#3b6e51",
+          "#5d9071",
+          "#87b197",
+          "#b2d2be",
+          "#def5e6"
+        ]
+      },
+      "sidebar-text": {
+        "role": "neutral",
+        "displayName": "Menú: text",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "sidebar-muted": {
+        "role": "neutral",
+        "displayName": "Menú: muted",
+        "canonical": "#dbe8d6",
+        "tonalRamp": [
+          "#080d06",
+          "#20281d",
+          "#3b4538",
+          "#5a6556",
+          "#7b8676",
+          "#9fa89b",
+          "#c4ccc1",
+          "#ebf0e9"
+        ]
+      },
+      "sidebar-icon": {
+        "role": "neutral",
+        "displayName": "Menú: icon",
+        "canonical": "#c9dcc3",
+        "tonalRamp": [
+          "#070d05",
+          "#1e291a",
+          "#384733",
+          "#566751",
+          "#778872",
+          "#9caa97",
+          "#c2cdbe",
+          "#e9f1e6"
+        ]
+      },
+      "sidebar-hover": {
+        "role": "neutral",
+        "displayName": "Menú: hover",
+        "canonical": "#2a5d40",
+        "tonalRamp": [
+          "#000f05",
+          "#062d19",
+          "#1c4d32",
+          "#3b6e50",
+          "#5d9071",
+          "#87b196",
+          "#b2d2bd",
+          "#def5e6"
+        ]
+      },
+      "sidebar-active": {
+        "role": "neutral",
+        "displayName": "Menú: active",
+        "canonical": "#a8c66c",
+        "tonalRamp": [
+          "#080e00",
+          "#1e2a00",
+          "#374a00",
+          "#536c03",
+          "#738e36",
+          "#98b06b",
+          "#bfd29d",
+          "#e7f5cf"
+        ]
+      },
+      "sidebar-active-text": {
+        "role": "neutral",
+        "displayName": "Menú: active text",
+        "canonical": "#16301f",
+        "tonalRamp": [
+          "#030e06",
+          "#172a1d",
+          "#304937",
+          "#4d6955",
+          "#6e8a76",
+          "#94ac9b",
+          "#bccfc1",
+          "#e5f3e9"
+        ]
+      },
+      "oscuro-green": {
+        "role": "primary",
+        "displayName": "Verde Monte (tema oscuro)",
+        "canonical": "#80c99b",
+        "tonalRamp": [
+          "#000f05",
+          "#002e17",
+          "#00502c",
+          "#277248",
+          "#4d9469",
+          "#7cb490",
+          "#aad5b9",
+          "#d9f8e3"
+        ]
+      },
+      "oscuro-green-dark": {
+        "role": "primary",
+        "displayName": "Verde Monte Hondo (tema oscuro)",
+        "canonical": "#a0ddb5",
+        "tonalRamp": [
+          "#001005",
+          "#002e17",
+          "#144e2f",
+          "#356f4c",
+          "#58916d",
+          "#84b293",
+          "#afd4bb",
+          "#dcf6e4"
+        ]
+      },
+      "oscuro-field-0": {
+        "role": "tertiary",
+        "displayName": "Verde Hierba (tema oscuro)",
+        "canonical": "#8fb058",
+        "tonalRamp": [
+          "#070e00",
+          "#1d2a01",
+          "#354a01",
+          "#506d0a",
+          "#708f39",
+          "#96b06d",
+          "#bdd39e",
+          "#e5f6d0"
+        ]
+      },
+      "oscuro-field-1": {
+        "role": "tertiary",
+        "displayName": "Ocre de Trigo (tema oscuro)",
+        "canonical": "#d0a63e",
+        "tonalRamp": [
+          "#110a00",
+          "#302301",
+          "#543e01",
+          "#7a5c01",
+          "#a37c02",
+          "#c1a155",
+          "#e0c68e",
+          "#ffedc5"
+        ]
+      },
+      "oscuro-field-2": {
+        "role": "tertiary",
+        "displayName": "Verde Laguna (tema oscuro)",
+        "canonical": "#6fa597",
+        "tonalRamp": [
+          "#000f0b",
+          "#032c24",
+          "#184c41",
+          "#386d60",
+          "#5a8e81",
+          "#85afa4",
+          "#b1d2c8",
+          "#ddf5ee"
+        ]
+      },
+      "oscuro-field-3": {
+        "role": "tertiary",
+        "displayName": "Lila Flor de Papa (tema oscuro)",
+        "canonical": "#b896c8",
+        "tonalRamp": [
+          "#120519",
+          "#301b3a",
+          "#51355e",
+          "#725381",
+          "#9474a3",
+          "#b499c1",
+          "#d5c0e0",
+          "#f7e8ff"
+        ]
+      },
+      "oscuro-field-4": {
+        "role": "tertiary",
+        "displayName": "Barro Cocido (tema oscuro)",
+        "canonical": "#c9804c",
+        "tonalRamp": [
+          "#170600",
+          "#3c1b00",
+          "#673100",
+          "#914d13",
+          "#b56f3c",
+          "#d1966e",
+          "#eebe9f",
+          "#ffeadd"
+        ]
+      },
+      "oscuro-field-ink": {
+        "role": "neutral",
+        "displayName": "Tinta de Campo (tema oscuro)",
+        "canonical": "#10231a",
+        "tonalRamp": [
+          "#050e09",
+          "#1a2922",
+          "#34473d",
+          "#52675c",
+          "#73887d",
+          "#98aaa0",
+          "#bfcdc5",
+          "#e7f1ec"
+        ]
+      },
+      "oscuro-urgent": {
+        "role": "neutral",
+        "displayName": "Urgent (tema oscuro)",
+        "canonical": "#e08a63",
+        "tonalRamp": [
+          "#190500",
+          "#411600",
+          "#6e2a02",
+          "#964720",
+          "#bb6a44",
+          "#d79273",
+          "#f2bba3",
+          "#ffe9e0"
+        ]
+      },
+      "oscuro-urgent-hover": {
+        "role": "neutral",
+        "displayName": "Urgent hover (tema oscuro)",
+        "canonical": "#eda27f",
+        "tonalRamp": [
+          "#190500",
+          "#411600",
+          "#6a2e0b",
+          "#8f4d2b",
+          "#b36e4e",
+          "#d0957a",
+          "#edbda8",
+          "#feeae0"
+        ]
+      },
+      "oscuro-urgent-ink": {
+        "role": "neutral",
+        "displayName": "Urgent ink (tema oscuro)",
+        "canonical": "#2a1208",
+        "tonalRamp": [
+          "#140704",
+          "#332018",
+          "#553b30",
+          "#77594d",
+          "#997a6e",
+          "#b99f94",
+          "#d9c4bc",
+          "#faebe5"
+        ]
+      },
+      "oscuro-canvas": {
+        "role": "neutral",
+        "displayName": "Neblina Verde (tema oscuro)",
+        "canonical": "#151a18",
+        "tonalRamp": [
+          "#090c0b",
+          "#222624",
+          "#3e4341",
+          "#5d6360",
+          "#7e8481",
+          "#a1a6a4",
+          "#c6cac8",
+          "#ecefee"
+        ]
+      },
+      "oscuro-surface": {
+        "role": "neutral",
+        "displayName": "Blanco (tema oscuro)",
+        "canonical": "#1f2623",
+        "tonalRamp": [
+          "#090c0b",
+          "#212624",
+          "#3d4441",
+          "#5b6360",
+          "#7c8581",
+          "#a0a7a4",
+          "#c5cbc8",
+          "#ebefee"
+        ]
+      },
+      "oscuro-text": {
+        "role": "neutral",
+        "displayName": "Tinta de Monte (tema oscuro)",
+        "canonical": "#edf2ee",
+        "tonalRamp": [
+          "#0a0c0a",
+          "#232624",
+          "#3f4340",
+          "#5e625f",
+          "#7f8480",
+          "#a2a6a3",
+          "#c7cac8",
+          "#edefed"
+        ]
+      },
+      "oscuro-muted": {
+        "role": "neutral",
+        "displayName": "Musgo (tema oscuro)",
+        "canonical": "#b8c3bc",
+        "tonalRamp": [
+          "#080c0a",
+          "#202723",
+          "#3c443f",
+          "#5a645e",
+          "#7b857f",
+          "#9fa7a2",
+          "#c4cbc7",
+          "#ebf0ed"
+        ]
+      },
+      "oscuro-line": {
+        "role": "neutral",
+        "displayName": "Lindero (tema oscuro)",
+        "canonical": "#3b4540",
+        "tonalRamp": [
+          "#080c0a",
+          "#202723",
+          "#3b4540",
+          "#5a645f",
+          "#7a8580",
+          "#9ea8a3",
+          "#c4cbc7",
+          "#ebf0ed"
+        ]
+      },
+      "oscuro-focus-ring": {
+        "role": "neutral",
+        "displayName": "Anillo de Foco (tema oscuro)",
+        "canonical": "#a0ddb5",
+        "tonalRamp": [
+          "#001005",
+          "#002e17",
+          "#144e2f",
+          "#356f4c",
+          "#58916d",
+          "#84b293",
+          "#afd4bb",
+          "#dcf6e4"
+        ]
+      },
+      "oscuro-on-primary": {
+        "role": "neutral",
+        "displayName": "Texto sobre Verde (tema oscuro)",
+        "canonical": "#14231a",
+        "tonalRamp": [
+          "#060d09",
+          "#1d2821",
+          "#37463d",
+          "#55665b",
+          "#76877c",
+          "#9ba9a0",
+          "#c1cdc5",
+          "#e8f1eb"
+        ]
+      },
+      "oscuro-sidebar-canvas": {
+        "role": "neutral",
+        "displayName": "Sidebar canvas (tema oscuro)",
+        "canonical": "#17392a",
+        "tonalRamp": [
+          "#010f08",
+          "#122b20",
+          "#2a4a3b",
+          "#476a59",
+          "#698c7a",
+          "#90ad9e",
+          "#b9d0c3",
+          "#e3f3ea"
+        ]
+      },
+      "oscuro-sidebar-active": {
+        "role": "neutral",
+        "displayName": "Sidebar active (tema oscuro)",
+        "canonical": "#a8c66c",
+        "tonalRamp": [
+          "#080e00",
+          "#1e2a00",
+          "#374a00",
+          "#536c03",
+          "#738e36",
+          "#98b06b",
+          "#bfd29d",
+          "#e7f5cf"
+        ]
+      },
+      "oscuro-sidebar-active-text": {
+        "role": "neutral",
+        "displayName": "Sidebar active text (tema oscuro)",
+        "canonical": "#16301f",
+        "tonalRamp": [
+          "#030e06",
+          "#172a1d",
+          "#304937",
+          "#4d6955",
+          "#6e8a76",
+          "#94ac9b",
+          "#bccfc1",
+          "#e5f3e9"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Título de la pantalla, escrito como frase."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "La cifra que resume una pantalla, como el ahorro en pesos."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Títulos de sección."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Nombre de cada tarea o fila principal."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Texto corriente."
+      },
+      "note": {
+        "displayName": "Note",
+        "purpose": "Explicaciones de una cifra y mensajes sin datos."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Texto de botones principales."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Opciones del menú y datos secundarios."
+      }
+    },
+    "shadows": [
+      {
+        "name": "capa-flotante",
+        "value": "0 8px 24px rgb(22 48 31 / 10%)",
+        "purpose": "Ventanas, avisos y ayudas emergentes en tema claro."
+      },
+      {
+        "name": "capa-flotante-oscuro",
+        "value": "0 16px 40px rgb(0 0 0 / 25%)",
+        "purpose": "Las mismas capas en tema oscuro."
+      }
+    ],
+    "motion": [
+      {
+        "name": "estado",
+        "value": "140ms ease-out",
+        "purpose": "Cambio de color de los botones."
+      },
+      {
+        "name": "tema",
+        "value": "180ms ease-out",
+        "purpose": "Cambio entre tema claro y oscuro."
+      },
+      {
+        "name": "cajon",
+        "value": "240ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+        "purpose": "Apertura del menú en celular."
+      },
+      {
+        "name": "movimiento-reducido",
+        "value": "0.01ms",
+        "purpose": "Con prefers-reduced-motion las animaciones y transiciones quedan casi en cero."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "inicio-apilado-filas",
+        "value": "34rem"
+      },
+      {
+        "name": "celular",
+        "value": "760px"
+      },
+      {
+        "name": "inicio-una-columna",
+        "value": "62rem"
+      },
+      {
+        "name": "ventana-baja",
+        "value": "min-width 761px y max-height 760px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón principal",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "La acción normal de una fila o pantalla.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Registrar recibo</button>",
+      "css": ".ds-btn-primary { min-height: 2.875rem; padding: 0 1.375rem; border: 0; border-radius: 0.5rem; font-size: 1.125rem; font-weight: 700; cursor: pointer; transition: background-color 140ms ease-out; background: var(--green); color: var(--on-primary); } .ds-btn-primary:hover { background: var(--green-dark); } .ds-btn-primary:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Botón urgente",
+      "kind": "button",
+      "refersTo": "button-urgent",
+      "description": "Solo para una tarea que no puede esperar.",
+      "html": "<button class=\"ds-btn-urgent\" type=\"button\">Cobrar</button>",
+      "css": ".ds-btn-urgent { min-height: 2.875rem; padding: 0 1.375rem; border: 0; border-radius: 0.5rem; font-size: 1.125rem; font-weight: 700; cursor: pointer; transition: background-color 140ms ease-out; background: var(--red); color: var(--on-primary); } .ds-btn-urgent:hover { background: var(--red-strong); } .ds-btn-urgent:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ver más",
+      "kind": "button",
+      "refersTo": "button-more",
+      "description": "Acción menor en texto, como abrir el resto de una lista.",
+      "html": "<button class=\"ds-btn-more\" type=\"button\">Ver 3 más</button>",
+      "css": ".ds-btn-more { padding: 0.5rem 0; border: 0; background: none; color: var(--green); font-size: 1.0625rem; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; } .ds-btn-more:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Opción del menú",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Opción del menú verde, con estado normal y activo.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item is-active\" href=\"#\"><svg viewBox=\"0 0 24 24\" width=\"22\" height=\"22\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 11l9-8 9 8\"/><path d=\"M5 10v10h14V10\"/></svg><span>Inicio</span></a><a class=\"ds-nav-item\" href=\"#\"><svg viewBox=\"0 0 24 24\" width=\"22\" height=\"22\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 11l9-8 9 8\"/><path d=\"M5 10v10h14V10\"/></svg><span>Vender</span></a></nav>",
+      "css": ".ds-nav { display: grid; gap: 0.125rem; width: 17rem; padding: 0.5rem 0.75rem; background: var(--sidebar-canvas); } .ds-nav-item { display: flex; align-items: center; gap: 0.75rem; min-height: 2.75rem; padding: 0 0.625rem; border-radius: 0.5rem; color: var(--sidebar-muted); font-size: 0.9375rem; font-weight: 500; text-decoration: none; transition: background-color 150ms, color 150ms; } .ds-nav-item:hover { background: var(--sidebar-hover); color: var(--sidebar-text); } .ds-nav-item.is-active { background: var(--sidebar-active); color: var(--sidebar-active-text); font-weight: 700; } .ds-nav-item:focus-visible { outline: 3px solid var(--sidebar-text); outline-offset: 2px; }"
+    },
+    {
+      "name": "Fila de tarea",
+      "kind": "custom",
+      "refersTo": "task-row",
+      "description": "Título, motivo y botón, separada por una línea de 2px.",
+      "html": "<div class=\"ds-task\"><div><strong>Registra el recibo de energía</strong><span>Falta el recibo de este mes.</span></div><button class=\"ds-task-action\" type=\"button\">Registrar</button></div>",
+      "css": ".ds-task { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 0; border-top: 2px solid var(--line); } .ds-task strong { display: block; color: var(--text); font-size: 1.3125rem; font-weight: 700; line-height: 1.25; } .ds-task span { color: var(--muted); font-size: 1.0625rem; } .ds-task-action { flex: none; min-height: 2.875rem; padding: 0 1.375rem; border: 0; border-radius: 0.5rem; font-size: 1.125rem; font-weight: 700; cursor: pointer; transition: background-color 140ms ease-out; background: var(--green); color: var(--on-primary); } .ds-task-action:hover { background: var(--green-dark); } .ds-task-action:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }"
+    },
+    {
+      "name": "Mapa de parcelas",
+      "kind": "custom",
+      "refersTo": "parcel-map",
+      "description": "Rectángulos planos proporcionales al gasto, separados por linderos. Valores de muestra.",
+      "html": "<div class=\"ds-map\" aria-hidden=\"true\"><div class=\"ds-parcel\" style=\"left:0;top:0;width:58%;height:100%;background:var(--field-0)\"><strong>Energía</strong></div><div class=\"ds-parcel\" style=\"left:58%;top:0;width:42%;height:60%;background:var(--field-1)\"><strong>Agua</strong></div><div class=\"ds-parcel\" style=\"left:58%;top:60%;width:42%;height:40%;background:var(--field-3)\"></div></div>",
+      "css": ".ds-map { position: relative; height: 16.25rem; overflow: hidden; border-radius: 0.625rem; background: var(--canvas); } .ds-parcel { position: absolute; overflow: hidden; padding: 0.625rem 0.75rem; border: 2px solid var(--canvas); color: var(--field-ink); } .ds-parcel strong { display: block; font-size: 1.0625rem; font-weight: 700; line-height: 1.2; }"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Contenedor plano para tablas y formularios.",
+      "html": "<section class=\"ds-panel\"><header class=\"ds-panel-head\"><h2>Últimas ventas</h2></header><div class=\"ds-panel-body\">Contenido</div></section>",
+      "css": ".ds-panel { overflow: hidden; border: 1px solid var(--line); border-radius: 0.5rem; background: var(--surface); } .ds-panel-head { padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface-muted) 70%, transparent); } .ds-panel-head h2 { margin: 0; color: var(--text); font-size: 0.9375rem; font-weight: 700; } .ds-panel-body { padding: 1.25rem; color: var(--text); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Parcelas del altiplano",
+    "overview": "Pyme360 se ve como el mosaico de cultivos del altiplano boyacense visto desde lejos: campos planos de color, separados por linderos delgados, sobre un fondo verde muy claro. El menú verde oscuro es la tierra firme. El color de los campos se reserva para mostrar datos, así que cuando aparece, significa algo.\n\nLa interfaz es directa y calmada, con letra grande y mucho aire entre filas. La usan personas con poca experiencia digital, entre tareas, en computador y en celular. Por eso el orden se hace con líneas y espacio, no con cajas ni efectos. Las esquinas son rectas o apenas redondeadas y las superficies no flotan.\n\n**Estado actual.** Solo el marco (menú y cabecera) e Inicio están rehechos en este sistema. Las demás pantallas ya usan los colores nuevos, pero conservan su distribución anterior y se rehacen una a la vez. Al rehacer cada pantalla, sigue este documento y no su código anterior.",
+    "keyCharacteristics": [
+      "Campos de color planos, sin degradados.",
+      "Verde oscuro para el menú y las acciones; rojo barro solo para lo urgente.",
+      "Una sola familia de letra, Figtree, con títulos muy gruesos.",
+      "Filas separadas por líneas en lugar de tarjetas con sombra.",
+      "Tema claro y tema oscuro con los mismos papeles de color."
+    ],
+    "rules": [
+      {
+        "name": "La Regla del Campo",
+        "body": "Ocre, laguna, lila y barro cocido solo pintan datos: parcelas y su leyenda. Nunca botones, avisos ni adornos. Verde hierba es la única excepción, porque también marca dónde estás en el menú y la selección de texto.",
+        "section": "colors"
+      },
+      {
+        "name": "La Regla del Rojo Escaso",
+        "body": "El rojo significa \"esto no puede esperar\". Si todas las filas son urgentes, ninguna lo es.",
+        "section": "colors"
+      },
+      {
+        "name": "La Regla de la Letra Grande",
+        "body": "En pantallas rehechas ningún texto baja de 0.9375rem. Quien usa la app puede estar de pie en una bodega y mirando un celular.",
+        "section": "typography"
+      },
+      {
+        "name": "La Regla del Peso Alineado",
+        "body": "Pesos, kilovatios y cantidades usan cifras tabulares, para que los números se puedan comparar de un vistazo.",
+        "section": "typography"
+      },
+      {
+        "name": "La Regla del Suelo Plano",
+        "body": "Lo que está en la página no flota. La sombra solo se usa en una capa que tapa algo, nunca para adornar.",
+        "section": "elevation"
+      },
+      {
+        "name": "La Regla del Lindero",
+        "body": "Las parcelas se separan con un borde de 2px del color del fondo. El lindero es un hueco en el terreno, no una línea dibujada.",
+        "section": "shapes"
+      },
+      {
+        "name": "La Regla del Mapa Acompañado",
+        "body": "El mapa nunca va solo. Los lectores de pantalla lo saltan y las parcelas pequeñas no llevan texto, así que la lista es la que garantiza que todos los datos se puedan leer.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do empieza cada pantalla rehecha por lo que la persona debe hacer, con un título escrito como frase.",
+      "Do usa los campos en orden (field-0 a field-4) y con texto field-ink encima.",
+      "Do acompaña toda cifra con una nota que explique de dónde sale y contra qué se compara.",
+      "Do separa las filas con líneas de 1px o 2px color lindero y deja 1rem de aire.",
+      "Do mantén botones de 2.875rem de alto y controles de al menos 44px en celular.",
+      "Do muestra una frase clara cuando falten datos.",
+      "Do revisa cada pieza nueva en tema claro y tema oscuro."
+    ],
+    "donts": [
+      "Don't uses ocre, laguna, lila ni barro cocido fuera de los datos.",
+      "Don't uses degradados: los campos son planos.",
+      "Don't pongas sombra a paneles, filas o botones; solo las capas flotantes la llevan.",
+      "Don't redondees contenedores ni botones más de 0.625rem.",
+      "Don't pongas una etiqueta pequeña en mayúsculas encima de los títulos.",
+      "Don't muevas los botones al pasar el cursor; solo cambia su color.",
+      "Don't muestres el mapa de parcelas sin su lista.",
+      "Don't agregues una segunda familia de letra."
+    ]
+  }
+}

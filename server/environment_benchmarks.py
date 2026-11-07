@@ -570,7 +570,7 @@ def build_benchmark_response(state: dict[str, Any], observations: list[dict[str,
     return {
         "profile": {
             "countryCode": profile.get("countryCode", "CO"),
-            "region": profile.get("region", "Antioquia"),
+            "region": profile.get("region", "Boyacá"),
             "sectorCode": profile.get("sectorCode", "1104"),
             "outputUnit": profile.get("outputUnit", "L"),
             "assumedMonthlyOutput": profile.get("assumedMonthlyOutput", 100000),

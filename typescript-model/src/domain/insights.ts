@@ -213,6 +213,88 @@ export function calculateProductFootprint(
     .sort((left, right) => right.goodUnits - left.goodUnits);
 }
 
+export interface ConsumptionParcel {
+  label: string;
+  value: number;
+  unit: "COP" | "kWh";
+}
+
+const MAX_PARCELS = 5;
+
+/** En qué se va el consumo del mes: en pesos si hay valor pagado, si no en kWh. */
+export function calculateConsumptionParcels(
+  state: AppState,
+  period: string,
+  metrics = calculateMonthlyEnvironmentalMetrics(state),
+): ConsumptionParcel[] {
+  const month = metrics.find((item) => item.period === period);
+  if (!month) return [];
+  const energyPrice = averageUnitPrice(state, period, "electricity");
+  const waterPrice = averageUnitPrice(state, period, "water");
+  const inPesos = energyPrice !== null;
+  const unit = inPesos ? "COP" : "kWh";
+  const rows = calculateProductFootprint(state, period, metrics);
+  const parcels: ConsumptionParcel[] = rows.length
+    ? rows.map((row) => ({
+        label: row.productName,
+        value: (inPesos ? row.energyCost : row.electricityKwh) ?? 0,
+        unit,
+      }))
+    : [
+        {
+          label: "Energía",
+          value: (inPesos ? (month.electricityKwh ?? 0) * energyPrice : month.electricityKwh) ?? 0,
+          unit,
+        },
+      ];
+  if (inPesos && waterPrice !== null && month.waterWithdrawalM3)
+    parcels.push({ label: "Agua", value: month.waterWithdrawalM3 * waterPrice, unit });
+  const sorted = parcels
+    .filter((parcel) => parcel.value > 0)
+    .sort((left, right) => right.value - left.value);
+  if (sorted.length <= MAX_PARCELS) return sorted;
+  const rest = sorted.slice(MAX_PARCELS - 1).reduce((sum, parcel) => sum + parcel.value, 0);
+  return [...sorted.slice(0, MAX_PARCELS - 1), { label: "Otros", value: rest, unit }];
+}
+
+export interface PlacedParcel extends ConsumptionParcel {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Reparte un rectángulo de 100 x 100 en parcelas proporcionales a su valor. */
+export function layoutParcels(
+  parcels: ConsumptionParcel[],
+  x = 0,
+  y = 0,
+  width = 100,
+  height = 100,
+): PlacedParcel[] {
+  if (!parcels.length) return [];
+  if (parcels.length === 1) return [{ ...parcels[0], x, y, width, height }];
+  const total = parcels.reduce((sum, parcel) => sum + parcel.value, 0);
+  let split = 1;
+  let running = parcels[0].value;
+  while (split < parcels.length - 1 && running < total / 2) {
+    running += parcels[split].value;
+    split += 1;
+  }
+  const share = running / total;
+  const first = parcels.slice(0, split);
+  const second = parcels.slice(split);
+  return width >= height
+    ? [
+        ...layoutParcels(first, x, y, width * share, height),
+        ...layoutParcels(second, x + width * share, y, width * (1 - share), height),
+      ]
+    : [
+        ...layoutParcels(first, x, y, width, height * share),
+        ...layoutParcels(second, x, y + height * share, width, height * (1 - share)),
+      ];
+}
+
 export interface SavingsSuggestion {
   id: string;
   indicatorId: IndicatorId;

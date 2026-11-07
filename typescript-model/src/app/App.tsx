@@ -54,7 +54,12 @@ import type {
   TaxConfiguration,
   SupplierInvoiceDocument,
 } from "../domain/types";
-import { clearSession, initializeAuth, type AuthUser, type AuthStatus } from "../infrastructure/auth";
+import {
+  clearSession,
+  initializeAuth,
+  type AuthUser,
+  type AuthStatus,
+} from "../infrastructure/auth";
 import { loadState, parseBackup, saveState, StateConflictError } from "../infrastructure/storage";
 import { extractReceipt, rememberedProvider } from "../features/environment/consumption";
 import {
@@ -65,15 +70,6 @@ import {
   errorMessage,
   formatMoney,
   getInitialTheme,
-  OverviewPage,
-  ContactsPage,
-  InventoryPage,
-  SalesPage,
-  PurchasesPage,
-  ProductionPage,
-  DataPage,
-  FinancePage,
-  AuditPage,
   LoginScreen,
   UsersModal,
   NavIcon,
@@ -87,6 +83,15 @@ import {
   type CloudSyncStatus,
 } from "../features/synchronization/sync";
 import { BrandLogo } from "../shared/BrandLogo";
+import { AuditPage } from "./screens/AuditScreen";
+import { ContactsPage } from "./screens/ContactsScreen";
+import { DataPage } from "./screens/DataScreen";
+import { FinancePage } from "./screens/FinanceScreen";
+import { HomePage } from "./screens/HomePage";
+import { InventoryPage } from "./screens/InventoryScreen";
+import { ProductionPage } from "./screens/ProductionScreen";
+import { PurchasesPage } from "./screens/PurchasesScreen";
+import { SalesPage } from "./screens/SalesScreen";
 import type { Page, Theme, ModalState } from "./AppViews";
 import {
   CompanyForm,
@@ -151,7 +156,8 @@ function Workspace({
     () => window.localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY) !== "false",
   );
   const [isMobileViewport, setIsMobileViewport] = useState(
-    () => typeof window !== "undefined" && window.matchMedia?.("(max-width: 760px)").matches === true,
+    () =>
+      typeof window !== "undefined" && window.matchMedia?.("(max-width: 760px)").matches === true,
   );
   const navCollapsed = sidebarCollapsed || isMobileViewport;
   const [sidebarTooltip, setSidebarTooltip] = useState<{
@@ -481,15 +487,21 @@ function Workspace({
 
   function confirmDeleteSale(sale: Sale) {
     if (window.confirm(`¿Eliminar ${sale.number} y devolver sus productos al inventario?`)) {
-      run(() => deleteSale(state, sale.id), "Venta eliminada; existencias devueltas.");
+      run(
+        () => deleteSale(state, sale.id),
+        "Venta eliminada. Los productos volvieron al inventario.",
+      );
     }
   }
 
   function confirmDeletePurchase(purchase: Purchase) {
     if (
-      window.confirm(`¿Eliminar ${purchase.number}? La compra recibida ajustará las existencias.`)
+      window.confirm(`¿Eliminar ${purchase.number}? Si ya la recibiste, el inventario se ajustará.`)
     ) {
-      run(() => deletePurchase(state, purchase.id), "Compra eliminada y existencias recalculadas.");
+      run(
+        () => deletePurchase(state, purchase.id),
+        "Compra eliminada. El inventario quedó al día.",
+      );
     }
   }
 
@@ -522,12 +534,19 @@ function Workspace({
   let content: ReactNode;
   if (page === "overview") {
     content = (
-      <OverviewPage
+      <HomePage
         state={state}
-        openPage={navigateToPage}
-        openCompany={() => setModal({ type: "company" })}
-        openContact={() => setModal({ type: "contact" })}
-        openProduct={() => setModal({ type: "product" })}
+        canEdit={canEdit}
+        isAdmin={isAdmin}
+        onTask={(target) => {
+          if (target === "company") setModal({ type: "company" });
+          else if (target === "contact") setModal({ type: "contact" });
+          else if (target === "product") setModal({ type: "product" });
+          else if (target === "reading") {
+            navigateToPage("environment");
+            setModal({ type: "reading" });
+          } else navigateToPage(target);
+        }}
       />
     );
   } else if (page === "contacts") {
@@ -550,7 +569,12 @@ function Workspace({
         onAdd={() => setModal({ type: "product" })}
         onAdjust={(product) => setModal({ type: "stock", product })}
         onPreparePurchase={(productId, quantity) =>
-          setModal({ type: "purchase", initialProductId: productId, initialQuantity: quantity, initialStatus: "pending" })
+          setModal({
+            type: "purchase",
+            initialProductId: productId,
+            initialQuantity: quantity,
+            initialStatus: "pending",
+          })
         }
         onPrepareProduction={(productId, quantity) =>
           setModal({ type: "production", initialProductId: productId, initialQuantity: quantity })
@@ -583,121 +607,102 @@ function Workspace({
     );
   } else if (page === "sales") {
     content = (
-      <>
-        <div className="module-segmented" role="group" aria-label="Sección de ventas">
-          <button
-            type="button"
-            aria-pressed={salesSection === "sales"}
-            className={salesSection === "sales" ? "active" : ""}
-            onClick={() => setSalesSection("sales")}
-          >
-            Ventas
-          </button>
-          <button
-            type="button"
-            aria-pressed={salesSection === "documents"}
-            className={salesSection === "documents" ? "active" : ""}
-            onClick={() => setSalesSection("documents")}
-          >
-            Facturación y documentos
-          </button>
-        </div>
-        {salesSection === "sales" && (
-          <section aria-label="Ventas">
-            <SalesPage
-              sales={state.sales}
-              electronicDocuments={state.electronicDocuments}
-              onAdd={() => setModal({ type: "sale" })}
-              onPrepareInvoice={(sale) =>
+      <SalesPage
+        sales={state.sales}
+        electronicDocuments={state.electronicDocuments}
+        section={salesSection}
+        onSectionChange={setSalesSection}
+        onAdd={() => setModal({ type: "sale" })}
+        onPrepareInvoice={(sale) =>
+          run(
+            () => prepareElectronicInvoice(state, sale.id, user.displayName || user.username),
+            "Borrador de factura listo. Revisa los avisos antes de enviarla.",
+          )
+        }
+        onPayment={(sale) => setModal({ type: "payment", sale })}
+        onDelete={confirmDeleteSale}
+        canEdit={canEdit}
+        canDelete={isAdmin}
+        documents={
+          <ElectronicInvoicingPanel
+            state={state}
+            canEdit={canEdit}
+            isAdmin={isAdmin}
+            onRefreshState={refreshPersistedState}
+            onDeleteDraft={(document) => {
+              if (
+                window.confirm(
+                  "¿Eliminar este borrador? Nunca se envió al proveedor y la venta se conserva.",
+                )
+              )
                 run(
-                  () => prepareElectronicInvoice(state, sale.id, user.displayName || user.username),
-                  "Borrador de factura preparado. Revisa las alertas tributarias antes de una futura transmisión.",
-                )
+                  () => deleteElectronicDraft(state, document.id),
+                  "Borrador electrónico eliminado.",
+                );
+            }}
+            onSaveTaxConfiguration={async (config: TaxConfiguration) => {
+              try {
+                return await commit(
+                  saveTaxConfiguration(state, config),
+                  "Datos para facturar guardados.",
+                );
+              } catch (error) {
+                notify(errorMessage(error), true);
+                return false;
               }
-              onPayment={(sale) => setModal({ type: "payment", sale })}
-              onDelete={confirmDeleteSale}
-              canEdit={canEdit}
-              canDelete={isAdmin}
-            />
-          </section>
-        )}
-        {salesSection === "documents" && (
-          <section aria-label="Facturación y documentos">
-            <ElectronicInvoicingPanel
-              state={state}
-              canEdit={canEdit}
-              isAdmin={isAdmin}
-              onRefreshState={refreshPersistedState}
-              onDeleteDraft={(document) => {
-                if (
-                  window.confirm(
-                    "¿Eliminar este borrador? Nunca se envió al proveedor y la venta se conserva.",
-                  )
-                )
-                  run(
-                    () => deleteElectronicDraft(state, document.id),
-                    "Borrador electrónico eliminado.",
-                  );
-              }}
-              onSaveTaxConfiguration={async (config: TaxConfiguration) => {
-                try {
-                  return await commit(
-                    saveTaxConfiguration(state, config),
-                    "Configuración tributaria guardada.",
-                  );
-                } catch (error) {
-                  notify(errorMessage(error), true);
-                  return false;
-                }
-              }}
-              onSaveSupplierInvoice={async (
-                input: Omit<
-                  SupplierInvoiceDocument,
-                  "id" | "importedAt" | "status" | "supplierContactId"
-                > & { supplierContactId?: string },
-              ) => {
-                try {
-                  return await commit(
-                    addSupplierInvoiceDocument(state, input),
-                    input.purchaseId
-                      ? "Factura XML importada y vinculada a la compra."
-                      : "Factura XML importada; quedó pendiente de revisión.",
-                  );
-                } catch (error) {
-                  notify(errorMessage(error), true);
-                  return false;
-                }
-              }}
-              onSaveAdjustment={async (originalDocumentId, kind, reason, changes) => {
-                try {
-                  return await commit(
-                    prepareElectronicAdjustmentNote(
-                      state,
-                      originalDocumentId,
-                      kind,
-                      reason,
-                      changes,
-                      user.displayName || user.username,
-                    ),
-                    kind === "credit_note"
-                      ? "Borrador de nota crédito guardado."
-                      : "Borrador de nota débito guardado.",
-                  );
-                } catch (error) {
-                  notify(errorMessage(error), true);
-                  return false;
-                }
-              }}
-            />
-          </section>
-        )}
-      </>
+            }}
+            onSaveSupplierInvoice={async (
+              input: Omit<
+                SupplierInvoiceDocument,
+                "id" | "importedAt" | "status" | "supplierContactId"
+              > & { supplierContactId?: string },
+            ) => {
+              try {
+                return await commit(
+                  addSupplierInvoiceDocument(state, input),
+                  input.purchaseId
+                    ? "Factura guardada y relacionada con la compra."
+                    : "Factura guardada para revisar después.",
+                );
+              } catch (error) {
+                notify(errorMessage(error), true);
+                return false;
+              }
+            }}
+            onSaveAdjustment={async (originalDocumentId, kind, reason, changes) => {
+              try {
+                return await commit(
+                  prepareElectronicAdjustmentNote(
+                    state,
+                    originalDocumentId,
+                    kind,
+                    reason,
+                    changes,
+                    user.displayName || user.username,
+                  ),
+                  kind === "credit_note"
+                    ? "Borrador de nota crédito guardado."
+                    : "Borrador de nota débito guardado.",
+                );
+              } catch (error) {
+                notify(errorMessage(error), true);
+                return false;
+              }
+            }}
+          />
+        }
+      />
     );
   } else if (page === "purchases") {
     content = (
       <PurchasesPage
         purchases={state.purchases}
         onAdd={() => setModal({ type: "purchase" })}
+        onReceive={(purchase) =>
+          setModal({ type: "purchase", purchase, initialStatus: "received" })
+        }
+        onPay={(purchase) => setModal({ type: "purchase-payment", purchase })}
+        onReview={(purchase) => setModal({ type: "review-payable", purchase })}
         onEdit={(purchase) => setModal({ type: "purchase", purchase })}
         onDelete={confirmDeletePurchase}
         canEdit={canEdit}
@@ -791,7 +796,7 @@ function Workspace({
         state={state}
         onRestore={restoreBackup}
         onExportExcel={exportExcel}
-        onImportWorkbook={(next) => commit(next, "Importación Excel guardada en SQLite.")}
+        onImportWorkbook={(next) => commit(next, "Datos importados y guardados.")}
         role={user.role}
         readOnly={!canEdit}
         canRestore={isAdmin}
@@ -805,9 +810,9 @@ function Workspace({
       ? "Copia antigua · solo lectura"
       : storageStatus === "error"
         ? "Sin conexión local"
-        : "Conectando a SQLite…"
+        : "Cargando tus datos…"
     : storageStatus === "saving"
-      ? "Guardando en SQLite…"
+      ? "Guardando…"
       : storageStatus === "error"
         ? "No se pudo guardar"
         : syncStatus?.conflicts
@@ -842,9 +847,7 @@ function Workspace({
 
   function toggleNavGroup(title: string) {
     setSidebarTooltip(null);
-    setExpandedNavGroups((current) =>
-      current.has(title) ? new Set() : new Set([title]),
-    );
+    setExpandedNavGroups((current) => (current.has(title) ? new Set() : new Set([title])));
   }
 
   useEffect(() => {
@@ -947,9 +950,9 @@ function Workspace({
               navigateToPage("overview");
             }}
             aria-label="Pyme360 inicio"
-            onMouseEnter={(event) => showSidebarTooltip(event.currentTarget, "Resumen")}
+            onMouseEnter={(event) => showSidebarTooltip(event.currentTarget, "Inicio")}
             onMouseLeave={() => setSidebarTooltip(null)}
-            onFocus={(event) => showSidebarTooltip(event.currentTarget, "Resumen")}
+            onFocus={(event) => showSidebarTooltip(event.currentTarget, "Inicio")}
             onBlur={() => setSidebarTooltip(null)}
           >
             <BrandLogo variant="mark" />
@@ -985,7 +988,7 @@ function Workspace({
           </span>
           <span className="workspace-company-copy">
             <strong>{state.company?.name || "Configurar empresa"}</strong>
-            <small>{state.company?.city || "Espacio local"} · Empresa activa</small>
+            <small>{state.company?.city || "Sin ciudad"}</small>
           </span>
         </section>
         <nav className="workspace-navigation" aria-label="Navegación principal">
@@ -1018,7 +1021,10 @@ function Workspace({
 
             if (visiblePages.length === 1) {
               return (
-                <section className="workspace-nav-group workspace-nav-group-single" key={group.title}>
+                <section
+                  className="workspace-nav-group workspace-nav-group-single"
+                  key={group.title}
+                >
                   <div className="workspace-navigation-links">
                     {renderPageButton(visiblePages[0])}
                   </div>
@@ -1044,11 +1050,7 @@ function Workspace({
                     <path d="m5 7.5 5 5 5-5" />
                   </svg>
                 </button>
-                <div
-                  className="workspace-nav-accordion"
-                  id={groupId}
-                  aria-hidden={!groupVisible}
-                >
+                <div className="workspace-nav-accordion" id={groupId} aria-hidden={!groupVisible}>
                   <div className="workspace-navigation-links">
                     {visiblePages.map((key) => renderPageButton(key, !groupVisible))}
                   </div>
@@ -1064,7 +1066,10 @@ function Workspace({
             aria-label={sidebarCollapsed ? "Expandir menú" : "Contraer menú"}
             aria-expanded={!sidebarCollapsed}
             onMouseEnter={(event) =>
-              showSidebarTooltip(event.currentTarget, sidebarCollapsed ? "Expandir menú" : "Contraer menú")
+              showSidebarTooltip(
+                event.currentTarget,
+                sidebarCollapsed ? "Expandir menú" : "Contraer menú",
+              )
             }
             onMouseLeave={() => setSidebarTooltip(null)}
             onClick={toggleSidebar}
@@ -1139,7 +1144,9 @@ function Workspace({
               </span>
               <div>
                 <strong id="workspace-profile-title">{displayName}</strong>
-                <span>{roleLabel} · {state.company?.name || "Espacio local"}</span>
+                <span>
+                  {roleLabel} · {state.company?.name || "Espacio local"}
+                </span>
               </div>
               <button
                 type="button"
@@ -1186,7 +1193,11 @@ function Workspace({
               >
                 {syncActionLabel}
               </button>
-              <button type="button" className="workspace-profile-action is-danger" onClick={onLogout}>
+              <button
+                type="button"
+                className="workspace-profile-action is-danger"
+                onClick={onLogout}
+              >
                 Cerrar sesión
               </button>
             </div>
@@ -1205,12 +1216,15 @@ function Workspace({
                 aria-controls="primary-navigation"
                 onClick={() => setMobileNavOpen(true)}
               >
-                <span aria-hidden="true">☰</span>
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  className="size-6 fill-none stroke-current stroke-2"
+                >
+                  <path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" />
+                </svg>
               </button>
               <div className="workspace-header-title">
-                <span className="workspace-overline">
-                  PYME360 · {state.company?.name || "ESPACIO LOCAL"}
-                </span>
                 <strong>{PAGE_TITLES[page]}</strong>
               </div>
             </div>
@@ -1271,19 +1285,6 @@ function Workspace({
         </header>
         <main className="workspace-main">
           <div className="page-content route-enter" key={page}>
-            {page === "overview" && !legacyReadOnly && (
-              <section className="overview-intro">
-                <div>
-                  <span className="overview-kicker">RESUMEN OPERATIVO</span>
-                  <h1>Una vista clara de tu negocio.</h1>
-                  <p>Ventas, inventario, producción y sostenibilidad en un solo lugar.</p>
-                </div>
-                <div className="overview-location">
-                  <span>SEDE PRINCIPAL</span>
-                  <strong>{state.company?.city || "Operación local"}</strong>
-                </div>
-              </section>
-            )}
             {legacyReadOnly ? (
               <DataPage
                 state={state}
@@ -1317,7 +1318,7 @@ function Workspace({
         {(
           [
             ["overview", "Inicio"],
-            ["sales", "Ventas"],
+            ["sales", "Vender"],
             ["inventory", "Inventario"],
           ] as const
         ).map(([destination, label]) => (
@@ -1399,7 +1400,7 @@ function Workspace({
           state={state}
           onClose={() => setModal(null)}
           onSave={(input) =>
-            run(() => createSale(state, input), "Venta registrada y existencias actualizadas.")
+            run(() => createSale(state, input), "Venta registrada. El inventario quedó al día.")
           }
         />
       )}
@@ -1418,7 +1419,7 @@ function Workspace({
                   ? updatePurchase(state, modal.purchase.id, input)
                   : createPurchase(state, input),
               modal.purchase
-                ? "Compra actualizada y existencias recalculadas."
+                ? "Compra guardada. El inventario quedó al día."
                 : "Compra registrada.",
             )
           }
@@ -1450,7 +1451,9 @@ function Workspace({
           onSave={(input) =>
             run(
               () => saveRecipeVersion(state, input),
-              input.versionId ? "Borrador de receta actualizado." : "Nueva versión guardada como borrador.",
+              input.versionId
+                ? "Borrador de receta actualizado."
+                : "Nueva versión guardada como borrador.",
             )
           }
         />
@@ -1558,7 +1561,7 @@ function Workspace({
           onSave={(amount, dueDate) =>
             run(
               () => confirmLegacyPurchasePayable(state, modal.purchase.id, amount, dueDate),
-              "Saldo histórico confirmado.",
+              "Saldo confirmado.",
             )
           }
         />
@@ -1569,7 +1572,7 @@ function Workspace({
           onSave={(name, type, openingBalance) =>
             run(
               () => addFinancialAccount(state, { name, type, openingBalance }),
-              "Cuenta financiera creada.",
+              "Caja o banco agregado.",
             )
           }
         />
@@ -1580,7 +1583,7 @@ function Workspace({
           onClose={() => setModal(null)}
           onSave={(input) =>
             (input.direction !== "out" || confirmCashBalance(input.accountId, input.amount)) &&
-            run(() => addManualCashMovement(state, input), "Movimiento de dinero registrado.")
+            run(() => addManualCashMovement(state, input), "Entrada o salida registrada.")
           }
         />
       )}

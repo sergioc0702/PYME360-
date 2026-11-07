@@ -1491,7 +1491,8 @@ function importCompanyAndConfig(
   for (const row of rowsFor(rows, "environmentalConfig")) {
     const existingConfig = state.environmentalConfig;
     const isDefaultConfig =
-      existingConfig?.providerName === "Enel Colombia" &&
+      (existingConfig?.providerName === "EBSA" ||
+        existingConfig?.providerName === "Enel Colombia") &&
       !existingConfig.accountNumber &&
       !existingConfig.businessUnit &&
       (existingConfig.geography ?? "Colombia SIN") === "Colombia SIN";
@@ -1517,7 +1518,7 @@ function importCompanyAndConfig(
         geography: fieldText(row, "geography") || "Colombia SIN",
         benchmarking: {
           countryCode: fieldText(row, "benchmarkCountryCode") || "CO",
-          region: fieldText(row, "benchmarkRegion") || "Antioquia",
+          region: fieldText(row, "benchmarkRegion") || "Boyacá",
           sectorCode: fieldText(row, "benchmarkSectorCode") || "1104",
           outputUnit: fieldText(row, "benchmarkOutputUnit") || "L",
           assumedMonthlyOutput: fieldNumber(row, "assumedMonthlyOutput", false, 100000),

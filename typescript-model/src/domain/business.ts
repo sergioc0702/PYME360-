@@ -85,13 +85,13 @@ export function createEmptyState(): AppState {
     importExtras: [],
     environmentalConfig: {
       providerId: "local-receipt",
-      providerName: "Enel Colombia",
+      providerName: "EBSA",
       accountNumber: "",
       businessUnit: "",
       geography: "Colombia SIN",
       benchmarking: {
         countryCode: "CO",
-        region: "Antioquia",
+        region: "Boyacá",
         sectorCode: "1104",
         outputUnit: "L",
         assumedMonthlyOutput: 100000,
@@ -108,7 +108,7 @@ export function saveEnvironmentalConfig(
   const next = cloneState(state);
   const benchmarking = config.benchmarking ?? {
     countryCode: "CO",
-    region: "Antioquia",
+    region: "Boyacá",
     sectorCode: "1104",
     outputUnit: "L",
     assumedMonthlyOutput: 100000,
@@ -116,13 +116,13 @@ export function saveEnvironmentalConfig(
   };
   next.environmentalConfig = {
     providerId: config.providerId.trim() || "local-receipt",
-    providerName: config.providerName.trim() || "Enel Colombia",
+    providerName: config.providerName.trim() || "EBSA",
     accountNumber: config.accountNumber.trim(),
     businessUnit: config.businessUnit.trim(),
     geography: config.geography?.trim() || "Colombia SIN",
     benchmarking: {
       countryCode: benchmarking.countryCode.trim().toUpperCase() || "CO",
-      region: benchmarking.region.trim() || "Antioquia",
+      region: benchmarking.region.trim() || "Boyacá",
       sectorCode: benchmarking.sectorCode.trim() || "1104",
       outputUnit: benchmarking.outputUnit.trim() || "L",
       assumedMonthlyOutput: Number(benchmarking.assumedMonthlyOutput),
@@ -733,31 +733,32 @@ export function prepareElectronicInvoice(
     );
   const validationIssues: string[] = [];
   if (!company.name.trim() || !company.taxId.trim())
-    validationIssues.push("Falta razón social o NIT de la empresa.");
+    validationIssues.push("Falta el nombre o el NIT de la empresa.");
   if (!company.city.trim()) validationIssues.push("Falta la ciudad de la empresa.");
-  if (!tax.legalAddress.trim()) validationIssues.push("Falta la dirección fiscal de la empresa.");
+  if (!tax.legalAddress.trim())
+    validationIssues.push("Falta la dirección del RUT en Datos para facturar.");
   if (!tax.taxRegime.trim() || tax.taxResponsibilities.length === 0)
-    validationIssues.push("Completa el perfil y las responsabilidades tributarias según el RUT.");
+    validationIssues.push(
+      "Falta el régimen y las responsabilidades del RUT en Datos para facturar.",
+    );
   if (!buyer.taxId.trim() || !buyer.identificationType)
-    validationIssues.push("Completa identificación y tipo de documento del cliente.");
+    validationIssues.push("Falta el documento del cliente y su tipo.");
   if (!tax.resolutionNumber || !tax.prefix || tax.rangeFrom === null || tax.rangeTo === null)
-    validationIssues.push("Configura la resolución y el rango de numeración autorizado.");
+    validationIssues.push("Falta la resolución y los números autorizados en Datos para facturar.");
   if (!tax.validFrom || !tax.validTo)
-    validationIssues.push("Completa la vigencia de la numeración.");
+    validationIssues.push("Faltan las fechas de la autorización en Datos para facturar.");
   if (tax.validFrom && sale.date < tax.validFrom)
     validationIssues.push("La vigencia de la numeración comienza después de la fecha de la venta.");
   if (tax.validTo && sale.date > tax.validTo)
     validationIssues.push("La numeración autorizada está vencida para la fecha de la venta.");
-  if (sale.total <= 0)
-    validationIssues.push("El total de la venta debe ser mayor que cero.");
+  if (sale.total <= 0) validationIssues.push("El total de la venta debe ser mayor que cero.");
   if (!sale.lines.length) validationIssues.push("La venta no tiene renglones para facturar.");
-  if (!tax.providerId)
-    validationIssues.push("Selecciona un proveedor tecnológico antes de transmitir.");
+  if (!tax.providerId) validationIssues.push("Falta el proveedor de facturación.");
   const lines = sale.lines.map((line, originalLineIndex) => {
     const product = state.products.find((item) => item.id === line.productId);
     const taxCategory = product?.taxCategory ?? "unclassified";
     if (taxCategory === "unclassified")
-      validationIssues.push(`Clasifica tributariamente el producto ${line.productName}.`);
+      validationIssues.push(`Falta definir el IVA de ${line.productName} en Inventario.`);
     if (taxCategory !== "taxable" && line.vatRate > 0)
       validationIssues.push(
         `El producto ${line.productName} tiene IVA, pero su clasificación no es gravada.`,
@@ -828,7 +829,9 @@ export function prepareElectronicInvoice(
   return next;
 }
 
-export function isUnsentElectronicDraft(document: AppState["electronicDocuments"][number]): boolean {
+export function isUnsentElectronicDraft(
+  document: AppState["electronicDocuments"][number],
+): boolean {
   return (
     document.status === "draft" &&
     document.attempts.length === 0 &&
@@ -1154,7 +1157,10 @@ export function addProduct(state: AppState, input: Omit<Product, "id" | "sku">):
     throw new BusinessError("La tarifa de IVA debe estar entre 0 y 100 %.");
   }
 
-  const sku = nextCode("P-", next.products.map((product) => product.sku));
+  const sku = nextCode(
+    "P-",
+    next.products.map((product) => product.sku),
+  );
   next.products.unshift({
     ...input,
     taxCategory: input.taxCategory ?? "unclassified",
@@ -1337,10 +1343,8 @@ export function saveRecipeVersion(state: AppState, input: RecipeVersionInput): A
     version.expectedYieldPercent = Number(input.expectedYieldPercent.toFixed(2));
     version.components = components;
   } else {
-    const versionNumber = recipe.versions.reduce(
-      (highest, version) => Math.max(highest, version.versionNumber),
-      0,
-    ) + 1;
+    const versionNumber =
+      recipe.versions.reduce((highest, version) => Math.max(highest, version.versionNumber), 0) + 1;
     recipe.versions.push({
       id: createId("recipe-version"),
       versionNumber,
@@ -1526,7 +1530,10 @@ export function createSale(state: AppState, input: SaleInput): AppState {
       : [];
   const sale: Sale = {
     id: saleId,
-    number: nextCode("V-", next.sales.map((sale) => sale.number)),
+    number: nextCode(
+      "V-",
+      next.sales.map((sale) => sale.number),
+    ),
     date: input.date,
     customerId: customer.id,
     customerName: customer.name,
@@ -1802,7 +1809,10 @@ export function createPurchase(state: AppState, input: PurchaseInput): AppState 
   const total = lines.reduce((sum, line) => sum + line.lineTotal, 0);
   next.purchases.unshift({
     id: purchaseId,
-    number: nextCode("C-", next.purchases.map((purchase) => purchase.number)),
+    number: nextCode(
+      "C-",
+      next.purchases.map((purchase) => purchase.number),
+    ),
     date: input.date,
     supplierId: supplier.id,
     supplierName: supplier.name,
@@ -1897,8 +1907,7 @@ export function createProductionOrder(
   const product = getProduct(next, productId);
   if (product.type !== "finished") throw new BusinessError("Selecciona un producto terminado.");
   const activeRecipe = activeRecipeVersion(next, productId);
-  if (!activeRecipe)
-    throw new BusinessError("Este producto no tiene una receta configurada.");
+  if (!activeRecipe) throw new BusinessError("Este producto no tiene una receta configurada.");
 
   const requirements = calculateRecipeRequirements(activeRecipe.version, quantity);
   const consumedMaterials = requirements.map((requirement) => {
@@ -1937,7 +1946,10 @@ export function createProductionOrder(
 
   next.productionOrders.unshift({
     id: orderId,
-    number: nextCode("OP-", next.productionOrders.map((order) => order.number)),
+    number: nextCode(
+      "OP-",
+      next.productionOrders.map((order) => order.number),
+    ),
     date,
     productId: product.id,
     productName: product.name,

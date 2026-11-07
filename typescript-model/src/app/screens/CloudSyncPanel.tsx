@@ -56,7 +56,11 @@ export function CloudSyncPanel({
           setMembers(nextMembers);
           setMemberRoles(Object.fromEntries(nextMembers.map((member) => [member.id, member.role])));
         } catch (cause) {
-          setError(cause instanceof Error ? cause.message : "No se pudieron consultar las cuentas centrales.");
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "No se pudieron consultar las cuentas centrales.",
+          );
         }
       }
       return next;
@@ -118,9 +122,11 @@ export function CloudSyncPanel({
           setStatus(synced);
           onStatus(synced);
           if (synced.lastValidation) {
-            setMessage(synced.lastValidation.matches
-              ? "Sincronización inicial verificada: los conteos locales y centrales coinciden."
-              : "Los cambios se procesaron. Hay registros pendientes o un conteo distinto; revisa el estado y vuelve a sincronizar.");
+            setMessage(
+              synced.lastValidation.matches
+                ? "Sincronización inicial verificada: los conteos locales y centrales coinciden."
+                : "Los cambios se procesaron. Hay registros pendientes o un conteo distinto; revisa el estado y vuelve a sincronizar.",
+            );
           }
         }
       }
@@ -139,9 +145,12 @@ export function CloudSyncPanel({
       const next = await synchronizeNow();
       setStatus(next);
       onStatus(next);
-      setMessage(next.message || (next.lastValidation?.matches
-        ? `Sincronización verificada: ${next.pushedBatches} lotes enviados, ${next.pulledRecords} cambios recibidos y los conteos coinciden.`
-        : `Sincronización terminada: ${next.pushedBatches} lotes enviados y ${next.pulledRecords} cambios recibidos. La verificación queda pendiente o muestra diferencias.`));
+      setMessage(
+        next.message ||
+          (next.lastValidation?.matches
+            ? `Sincronización verificada: ${next.pushedBatches} lotes enviados, ${next.pulledRecords} cambios recibidos y los conteos coinciden.`
+            : `Sincronización terminada: ${next.pushedBatches} lotes enviados y ${next.pulledRecords} cambios recibidos. La verificación queda pendiente o muestra diferencias.`),
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo sincronizar.");
       await refresh();
@@ -163,16 +172,26 @@ export function CloudSyncPanel({
       onStatus(next);
       const latestRejection = next.rejectedRecords?.[0];
       if (latestRejection) {
-        setMessage(`El servidor aún no aceptó el lote reconstruido. Corrige el dato indicado y vuelve a intentar: ${latestRejection.error}`);
+        setMessage(
+          `El servidor aún no aceptó el lote reconstruido. Corrige el dato indicado y vuelve a intentar: ${latestRejection.error}`,
+        );
       } else if (next.conflicts > 0) {
-        setMessage("El lote corregido fue enviado, pero contiene cambios concurrentes. Revisa y resuelve el conflicto.");
+        setMessage(
+          "El lote corregido fue enviado, pero contiene cambios concurrentes. Revisa y resuelve el conflicto.",
+        );
       } else if (next.pendingBatches > 0) {
-        setMessage("El lote corregido quedó guardado y pendiente. Pyme360 lo enviará cuando el servidor esté disponible.");
+        setMessage(
+          "El lote corregido quedó guardado y pendiente. Pyme360 lo enviará cuando el servidor esté disponible.",
+        );
       } else {
-        setMessage(`Lote corregido aceptado por la empresa central (${rebuilt.rebuiltChanges} registros).`);
+        setMessage(
+          `Lote corregido aceptado por la empresa central (${rebuilt.rebuiltChanges} registros).`,
+        );
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudo reconstruir el lote rechazado.");
+      setError(
+        cause instanceof Error ? cause.message : "No se pudo reconstruir el lote rechazado.",
+      );
       await refresh();
     } finally {
       setBusy(false);
@@ -214,13 +233,18 @@ export function CloudSyncPanel({
   async function saveMemberRole(member: CloudMember) {
     const nextRole = memberRoles[member.id] ?? member.role;
     if (nextRole === member.role) return;
-    if (!window.confirm(`¿Cambiar el rol de ${member.email} de ${member.role} a ${nextRole}?`)) return;
+    if (!window.confirm(`¿Cambiar el rol de ${member.email} de ${member.role} a ${nextRole}?`))
+      return;
     setBusy(true);
     setError("");
     try {
       await updateCloudMember(member.id, { role: nextRole });
-      setMembers((items) => items.map((item) => item.id === member.id ? { ...item, role: nextRole } : item));
-      setMessage("Rol central actualizado. Actualiza también el rol local en Usuarios para mantener el acceso sin conexión.");
+      setMembers((items) =>
+        items.map((item) => (item.id === member.id ? { ...item, role: nextRole } : item)),
+      );
+      setMessage(
+        "Rol central actualizado. Actualiza también el rol local en Usuarios para mantener el acceso sin conexión.",
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo cambiar el rol.");
       await refresh();
@@ -236,12 +260,18 @@ export function CloudSyncPanel({
     setError("");
     try {
       await updateCloudMember(member.id, { active: !member.active });
-      setMembers((items) => items.map((item) => item.id === member.id ? { ...item, active: !member.active } : item));
-      setMessage(member.active
-        ? "Cuenta bloqueada y sesiones centrales revocadas. Bloquea también su cuenta local en Usuarios para impedir nuevas operaciones offline."
-        : "Cuenta central activada; revisa también su cuenta local antes de autorizar trabajo sin conexión.");
+      setMembers((items) =>
+        items.map((item) => (item.id === member.id ? { ...item, active: !member.active } : item)),
+      );
+      setMessage(
+        member.active
+          ? "Cuenta bloqueada y sesiones centrales revocadas. Bloquea también su cuenta local en Usuarios para impedir nuevas operaciones offline."
+          : "Cuenta central activada; revisa también su cuenta local antes de autorizar trabajo sin conexión.",
+      );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudo cambiar el estado de la cuenta.");
+      setError(
+        cause instanceof Error ? cause.message : "No se pudo cambiar el estado de la cuenta.",
+      );
     } finally {
       setBusy(false);
     }
@@ -280,17 +310,26 @@ export function CloudSyncPanel({
                   {status.connectedForCurrentUser
                     ? "Esta cuenta local está vinculada a la organización."
                     : "Vincula la cuenta de empresa para autenticar las operaciones de este usuario."}
-                  {status.lastSyncedAt ? ` Última actividad: ${new Date(status.lastSyncedAt).toLocaleString("es-CO")}.` : ""}
+                  {status.lastSyncedAt
+                    ? ` Última actividad: ${new Date(status.lastSyncedAt).toLocaleString("es-CO")}.`
+                    : ""}
                 </p>
               )}
               {status?.configured && status.lastValidation && (
-                <p className={`mt-3 mb-0 text-xs ${status.lastValidation.matches ? "text-notice-ink" : "text-warning-text"}`}>
-                  {status.lastValidation.matches ? "Conteos locales y centrales verificados." : "Hay cambios provisionales o conteos por revisar."}
+                <p
+                  className={`mt-3 mb-0 text-xs ${status.lastValidation.matches ? "text-notice-ink" : "text-warning-text"}`}
+                >
+                  {status.lastValidation.matches
+                    ? "Conteos locales y centrales verificados."
+                    : "Hay cambios provisionales o conteos por revisar."}
                   {` Revisión: ${new Date(status.lastValidation.checkedAt).toLocaleString("es-CO")}.`}
                 </p>
               )}
               {status?.centralAuthError && (
-                <p role="alert" className="mt-3 mb-0 rounded-lg border border-warning-line bg-warning-soft p-3 text-sm text-warning-text">
+                <p
+                  role="alert"
+                  className="mt-3 mb-0 rounded-lg border border-warning-line bg-warning-soft p-3 text-sm text-warning-text"
+                >
                   {status.centralAuthError === "reauthenticate"
                     ? "La sesión central venció o fue revocada. Vuelve a conectar la cuenta; tus cambios permanecen guardados en SQLite."
                     : "El rol central de esta cuenta no permite enviar cambios. Alinea el rol local y el central en Usuarios y vuelve a sincronizar."}
@@ -299,11 +338,17 @@ export function CloudSyncPanel({
             </div>
             {status?.secureStoreAvailable === false && (
               <p className="mt-3 mb-0 text-xs text-warning-text">
-                Para guardar el token con seguridad instala la integración del sistema: <code>py -m pip install -r server/requirements-sync.txt</code>.
+                Para guardar el token con seguridad instala la integración del sistema:{" "}
+                <code>py -m pip install -r server/requirements-sync.txt</code>.
               </p>
             )}
             {status?.configured && (
-              <button className="button button-primary" type="button" disabled={busy} onClick={() => void syncNow()}>
+              <button
+                className="button button-primary"
+                type="button"
+                disabled={busy}
+                onClick={() => void syncNow()}
+              >
                 {busy ? "Sincronizando…" : "Sincronizar ahora"}
               </button>
             )}
@@ -337,35 +382,75 @@ export function CloudSyncPanel({
             <form className="grid gap-4" onSubmit={(event) => void handleWorkspaceSubmit(event)}>
               <label className="grid gap-1.5 text-sm font-semibold text-label">
                 Dirección de la API central
-                <input className={fieldClassName()} name="apiUrl" type="url" required value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} placeholder="https://api.tuempresa.com" />
+                <input
+                  className={fieldClassName()}
+                  name="apiUrl"
+                  type="url"
+                  required
+                  value={apiUrl}
+                  onChange={(event) => setApiUrl(event.target.value)}
+                  placeholder="https://api.tuempresa.com"
+                />
               </label>
               {mode === "register" ? (
                 <>
                   <label className="grid gap-1.5 text-sm font-semibold text-label">
                     Nombre de la empresa
-                    <input className={fieldClassName()} name="organizationName" required placeholder="Mi empresa" />
+                    <input
+                      className={fieldClassName()}
+                      name="organizationName"
+                      required
+                      placeholder="Mi empresa"
+                    />
                   </label>
                   <label className="grid gap-1.5 text-sm font-semibold text-label">
                     Nombre visible del administrador
-                    <input className={fieldClassName()} name="displayName" required placeholder="Nombre y apellido" />
+                    <input
+                      className={fieldClassName()}
+                      name="displayName"
+                      required
+                      placeholder="Nombre y apellido"
+                    />
                   </label>
                 </>
               ) : (
                 <label className="grid gap-1.5 text-sm font-semibold text-label">
                   Identificador del espacio de empresa
-                  <input className={fieldClassName()} name="workspaceId" required value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)} placeholder="UUID recibido al registrar la empresa" />
+                  <input
+                    className={fieldClassName()}
+                    name="workspaceId"
+                    required
+                    value={workspaceId}
+                    onChange={(event) => setWorkspaceId(event.target.value)}
+                    placeholder="UUID recibido al registrar la empresa"
+                  />
                 </label>
               )}
               <label className="grid gap-1.5 text-sm font-semibold text-label">
                 Correo de la cuenta central
-                <input className={fieldClassName()} name="email" type="email" autoComplete="username" required />
+                <input
+                  className={fieldClassName()}
+                  name="email"
+                  type="email"
+                  autoComplete="username"
+                  required
+                />
               </label>
               <label className="grid gap-1.5 text-sm font-semibold text-label">
                 Contraseña de la cuenta central
-                <input className={fieldClassName()} name="password" type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} minLength={8} required />
+                <input
+                  className={fieldClassName()}
+                  name="password"
+                  type="password"
+                  autoComplete={mode === "register" ? "new-password" : "current-password"}
+                  minLength={8}
+                  required
+                />
               </label>
               <p className="m-0 text-xs leading-relaxed text-muted">
-                La contraseña pasa por el servidor local y se reenvía a la dirección central indicada, que debe usar HTTPS. El token se guarda en el almacén seguro del sistema operativo, no en el navegador ni en SQLite.
+                La contraseña pasa por el servidor local y se reenvía a la dirección central
+                indicada, que debe usar HTTPS. El token se guarda en el almacén seguro del sistema
+                operativo, no en el navegador ni en SQLite.
               </p>
               {mode === "connect" && apiUrl.trim() && (
                 <a
@@ -377,11 +462,24 @@ export function CloudSyncPanel({
                   Recuperar contraseña de la cuenta central
                 </a>
               )}
-              <button className="button button-primary justify-self-start" type="submit" disabled={busy}>
-                {busy ? "Procesando…" : mode === "register" ? "Crear espacio y enviar verificación" : "Vincular cuenta"}
+              <button
+                className="button button-primary justify-self-start"
+                type="submit"
+                disabled={busy}
+              >
+                {busy
+                  ? "Procesando…"
+                  : mode === "register"
+                    ? "Crear espacio y enviar verificación"
+                    : "Vincular cuenta"}
               </button>
               {verificationLink && (
-                <a className="text-sm font-semibold text-brand underline" href={verificationLink} target="_blank" rel="noreferrer">
+                <a
+                  className="text-sm font-semibold text-brand underline"
+                  href={verificationLink}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   Abrir enlace de verificación de desarrollo
                 </a>
               )}
@@ -390,18 +488,35 @@ export function CloudSyncPanel({
         ) : null}
 
         {status?.rejectedRecords?.length ? (
-          <section className="grid gap-3 rounded-2xl border border-danger-line bg-danger-soft p-4" aria-live="polite">
+          <section
+            className="grid gap-3 rounded-2xl border border-danger-line bg-danger-soft p-4"
+            aria-live="polite"
+          >
             <div>
-              <h3 className="m-0 text-base font-bold text-danger">Cambios provisionales rechazados</h3>
-              <p className="mt-1 mb-0 text-sm text-danger">Estos datos siguen guardados en SQLite, pero no cuentan como aceptados por la empresa central. Corrige el registro en su módulo y luego reconstruye el lote para enviarlo de nuevo.</p>
+              <h3 className="m-0 text-base font-bold text-danger">
+                Cambios provisionales rechazados
+              </h3>
+              <p className="mt-1 mb-0 text-sm text-danger">
+                Estos datos siguen guardados en SQLite, pero no cuentan como aceptados por la
+                empresa central. Corrige el registro en su módulo y luego reconstruye el lote para
+                enviarlo de nuevo.
+              </p>
             </div>
             <ul className="m-0 grid gap-2 pl-5 text-sm text-danger">
               {status.rejectedRecords.map((rejected) => (
-                <li key={rejected.batchId}>{rejected.error} <span className="text-xs opacity-80">Lote {rejected.batchId}</span></li>
+                <li key={rejected.batchId}>
+                  {rejected.error}{" "}
+                  <span className="text-xs opacity-80">Lote {rejected.batchId}</span>
+                </li>
               ))}
             </ul>
             {role !== "viewer" && (
-              <button className="button button-secondary justify-self-start" type="button" disabled={busy || !navigator.onLine} onClick={() => void retryRejectedBatch()}>
+              <button
+                className="button button-secondary justify-self-start"
+                type="button"
+                disabled={busy || !navigator.onLine}
+                onClick={() => void retryRejectedBatch()}
+              >
                 {busy ? "Reconstruyendo…" : "Reconstruir y reintentar lote"}
               </button>
             )}
@@ -409,72 +524,149 @@ export function CloudSyncPanel({
         ) : null}
 
         {status?.pendingErrors?.length ? (
-          <section className="grid gap-2 rounded-2xl border border-warning-line bg-warning-soft p-4" aria-live="polite">
-            <h3 className="m-0 text-base font-bold text-warning-text">Envío temporalmente pendiente</h3>
-            <p className="m-0 text-sm text-warning-text">Los datos siguen en SQLite y Pyme360 reintentará cuando vuelva a estar disponible la API.</p>
+          <section
+            className="grid gap-2 rounded-2xl border border-warning-line bg-warning-soft p-4"
+            aria-live="polite"
+          >
+            <h3 className="m-0 text-base font-bold text-warning-text">
+              Envío temporalmente pendiente
+            </h3>
+            <p className="m-0 text-sm text-warning-text">
+              Los datos siguen en SQLite y Pyme360 reintentará cuando vuelva a estar disponible la
+              API.
+            </p>
             <ul className="m-0 grid gap-1 pl-5 text-sm text-warning-text">
-              {status.pendingErrors.map((item) => <li key={item.batchId}>{item.error}</li>)}
+              {status.pendingErrors.map((item) => (
+                <li key={item.batchId}>{item.error}</li>
+              ))}
             </ul>
           </section>
         ) : null}
 
         {status?.configured && status.connectedForCurrentUser && role === "admin" && (
           <>
-          <section className="grid gap-3 rounded-2xl border border-line p-4">
-            <div>
-              <h3 className="m-0 text-base font-bold">Invitar a una persona</h3>
-              <p className="mt-1 mb-0 text-sm text-muted">El correo recibirá un enlace para aceptar la invitación y definir su contraseña. Para trabajar sin conexión, crea también su usuario local en <strong>Usuarios</strong> con el mismo rol.</p>
-            </div>
-            <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:items-end" onSubmit={(event) => void sendInvitation(event)}>
-              <label className="grid gap-1.5 text-sm font-semibold text-label">
-                Correo
-                <input className={fieldClassName()} name="inviteEmail" type="email" required />
-              </label>
-              <label className="grid gap-1.5 text-sm font-semibold text-label">
-                Rol
-                <select className={fieldClassName()} name="inviteRole" defaultValue="operator">
-                  <option value="operator">Operador</option>
-                  <option value="viewer">Consulta</option>
-                  <option value="admin">Administrador</option>
-                </select>
-              </label>
-              <button className="button button-secondary" type="submit">Enviar invitación</button>
-            </form>
-            {invitationMessage && <p role="status" className="m-0 text-sm text-muted">{invitationMessage}</p>}
-          </section>
-          <section className="grid gap-3 rounded-2xl border border-line p-4">
-            <div>
-              <h3 className="m-0 text-base font-bold">Miembros de la empresa</h3>
-              <p className="mt-1 mb-0 text-sm text-muted">Los permisos centrales se validan en cada solicitud y son independientes del acceso local sin conexión. Bloquear una cuenta central revoca sus sesiones en la nube; bloquea también su cuenta local desde Usuarios para impedir nuevas operaciones offline en ese equipo.</p>
-            </div>
-            <div className="overflow-x-auto rounded-xl border border-line">
-              <table>
-                <thead><tr><th>Persona</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
-                <tbody>
-                  {members.map((member) => (
-                    <tr key={member.id}>
-                      <td><strong>{member.display_name}</strong><small>{member.email} · {member.emailVerified ? "Correo verificado" : "Correo pendiente"}{member.id === status.centralUserId ? " · Cuenta conectada" : ""}</small></td>
-                      <td>
-                        <select aria-label={`Rol de ${member.email}`} disabled={busy || member.id === status.centralUserId} className={fieldClassName()} value={memberRoles[member.id] ?? member.role} onChange={(event) => setMemberRoles((current) => ({ ...current, [member.id]: event.target.value as CloudMember["role"] }))}>
-                          <option value="admin">Administrador</option>
-                          <option value="operator">Operador</option>
-                          <option value="viewer">Consulta</option>
-                        </select>
-                      </td>
-                      <td>{member.active ? "Activa" : "Bloqueada"}</td>
-                      <td>
-                        <div className="flex flex-wrap gap-2">
-                          <button className="button button-secondary" disabled={busy || member.id === status.centralUserId || (memberRoles[member.id] ?? member.role) === member.role} onClick={() => void saveMemberRole(member)}>Guardar rol</button>
-                          <button className="button button-secondary" disabled={busy || member.id === status.centralUserId} onClick={() => void toggleMember(member)}>{member.active ? "Bloquear" : "Activar"}</button>
-                          <button className="button button-secondary" disabled={busy || member.id === status.centralUserId || !member.active} onClick={() => void revokeSessions(member)}>Cerrar sesiones</button>
-                        </div>
-                      </td>
+            <section className="grid gap-3 rounded-2xl border border-line p-4">
+              <div>
+                <h3 className="m-0 text-base font-bold">Invitar a una persona</h3>
+                <p className="mt-1 mb-0 text-sm text-muted">
+                  El correo recibirá un enlace para aceptar la invitación y definir su contraseña.
+                  Para trabajar sin conexión, crea también su usuario local en{" "}
+                  <strong>Usuarios</strong> con el mismo rol.
+                </p>
+              </div>
+              <form
+                className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:items-end"
+                onSubmit={(event) => void sendInvitation(event)}
+              >
+                <label className="grid gap-1.5 text-sm font-semibold text-label">
+                  Correo
+                  <input className={fieldClassName()} name="inviteEmail" type="email" required />
+                </label>
+                <label className="grid gap-1.5 text-sm font-semibold text-label">
+                  Rol
+                  <select className={fieldClassName()} name="inviteRole" defaultValue="operator">
+                    <option value="operator">Operador</option>
+                    <option value="viewer">Consulta</option>
+                    <option value="admin">Administrador</option>
+                  </select>
+                </label>
+                <button className="button button-secondary" type="submit">
+                  Enviar invitación
+                </button>
+              </form>
+              {invitationMessage && (
+                <p role="status" className="m-0 text-sm text-muted">
+                  {invitationMessage}
+                </p>
+              )}
+            </section>
+            <section className="grid gap-3 rounded-2xl border border-line p-4">
+              <div>
+                <h3 className="m-0 text-base font-bold">Miembros de la empresa</h3>
+                <p className="mt-1 mb-0 text-sm text-muted">
+                  Los permisos centrales se validan en cada solicitud y son independientes del
+                  acceso local sin conexión. Bloquear una cuenta central revoca sus sesiones en la
+                  nube; bloquea también su cuenta local desde Usuarios para impedir nuevas
+                  operaciones offline en ese equipo.
+                </p>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-line">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Persona</th>
+                      <th>Rol</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                  </thead>
+                  <tbody>
+                    {members.map((member) => (
+                      <tr key={member.id}>
+                        <td>
+                          <strong>{member.display_name}</strong>
+                          <small>
+                            {member.email} ·{" "}
+                            {member.emailVerified ? "Correo verificado" : "Correo pendiente"}
+                            {member.id === status.centralUserId ? " · Cuenta conectada" : ""}
+                          </small>
+                        </td>
+                        <td>
+                          <select
+                            aria-label={`Rol de ${member.email}`}
+                            disabled={busy || member.id === status.centralUserId}
+                            className={fieldClassName()}
+                            value={memberRoles[member.id] ?? member.role}
+                            onChange={(event) =>
+                              setMemberRoles((current) => ({
+                                ...current,
+                                [member.id]: event.target.value as CloudMember["role"],
+                              }))
+                            }
+                          >
+                            <option value="admin">Administrador</option>
+                            <option value="operator">Operador</option>
+                            <option value="viewer">Consulta</option>
+                          </select>
+                        </td>
+                        <td>{member.active ? "Activa" : "Bloqueada"}</td>
+                        <td>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              className="button button-secondary"
+                              disabled={
+                                busy ||
+                                member.id === status.centralUserId ||
+                                (memberRoles[member.id] ?? member.role) === member.role
+                              }
+                              onClick={() => void saveMemberRole(member)}
+                            >
+                              Guardar rol
+                            </button>
+                            <button
+                              className="button button-secondary"
+                              disabled={busy || member.id === status.centralUserId}
+                              onClick={() => void toggleMember(member)}
+                            >
+                              {member.active ? "Bloquear" : "Activar"}
+                            </button>
+                            <button
+                              className="button button-secondary"
+                              disabled={
+                                busy || member.id === status.centralUserId || !member.active
+                              }
+                              onClick={() => void revokeSessions(member)}
+                            >
+                              Cerrar sesiones
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </>
         )}
 
@@ -482,25 +674,53 @@ export function CloudSyncPanel({
           <section className="grid gap-3">
             <div>
               <h3 className="m-0 text-base font-bold">Cambios por resolver</h3>
-              <p className="mt-1 mb-0 text-sm text-muted">Se conservan las dos versiones. Un administrador debe elegir cuál queda como versión central.</p>
+              <p className="mt-1 mb-0 text-sm text-muted">
+                Se conservan las dos versiones. Un administrador debe elegir cuál queda como versión
+                central.
+              </p>
             </div>
             {status.conflictRecords.map((conflict) => (
-              <article className="grid gap-3 rounded-2xl border border-warning-line bg-warning-soft p-4" key={conflict.conflictId}>
+              <article
+                className="grid gap-3 rounded-2xl border border-warning-line bg-warning-soft p-4"
+                key={conflict.conflictId}
+              >
                 <div>
-                  <strong className="text-sm">{readableEntity(conflict.entityType)} · {conflict.entityId}</strong>
-                  <p className="mt-1 mb-0 text-xs text-muted">Versión local y versión central modificadas por separado.</p>
+                  <strong className="text-sm">
+                    {readableEntity(conflict.entityType)} · {conflict.entityId}
+                  </strong>
+                  <p className="mt-1 mb-0 text-xs text-muted">
+                    Versión local y versión central modificadas por separado.
+                  </p>
                 </div>
                 <details className="text-xs text-muted">
-                  <summary className="cursor-pointer font-semibold">Revisar ambas versiones</summary>
+                  <summary className="cursor-pointer font-semibold">
+                    Revisar ambas versiones
+                  </summary>
                   <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface p-3">Local: {JSON.stringify(conflict.localChange.payload, null, 2)}</pre>
-                    <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface p-3">Central: {JSON.stringify(conflict.remoteChange.payload, null, 2)}</pre>
+                    <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface p-3">
+                      Local: {JSON.stringify(conflict.localChange.payload, null, 2)}
+                    </pre>
+                    <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface p-3">
+                      Central: {JSON.stringify(conflict.remoteChange.payload, null, 2)}
+                    </pre>
                   </div>
                 </details>
                 {role === "admin" && (
                   <div className="flex flex-wrap gap-2">
-                    <button className="button button-secondary" disabled={busy} onClick={() => void resolveConflict(conflict.conflictId, "local")}>Conservar local</button>
-                    <button className="button button-secondary" disabled={busy} onClick={() => void resolveConflict(conflict.conflictId, "remote")}>Conservar central</button>
+                    <button
+                      className="button button-secondary"
+                      disabled={busy}
+                      onClick={() => void resolveConflict(conflict.conflictId, "local")}
+                    >
+                      Conservar local
+                    </button>
+                    <button
+                      className="button button-secondary"
+                      disabled={busy}
+                      onClick={() => void resolveConflict(conflict.conflictId, "remote")}
+                    >
+                      Conservar central
+                    </button>
                   </div>
                 )}
               </article>
@@ -508,8 +728,22 @@ export function CloudSyncPanel({
           </section>
         ) : null}
 
-        {message && <p role="status" className="m-0 rounded-xl border border-notice-line bg-notice px-3 py-2 text-sm text-notice-ink">{message}</p>}
-        {error && <p role="alert" className="m-0 rounded-xl border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+        {message && (
+          <p
+            role="status"
+            className="m-0 rounded-xl border border-notice-line bg-notice px-3 py-2 text-sm text-notice-ink"
+          >
+            {message}
+          </p>
+        )}
+        {error && (
+          <p
+            role="alert"
+            className="m-0 rounded-xl border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger"
+          >
+            {error}
+          </p>
+        )}
       </div>
     </Modal>
   );
