@@ -520,7 +520,7 @@ export const IMPORT_MODULES: ImportModuleDefinition[] = [
     sheetAliases: ["produccion", "ordenes de produccion", "production"],
     fields: [
       field("id", "ID", "text", ["id orden"]),
-      field("number", "Orden", "text", ["numero", "numero orden", "folio"], true),
+      field("number", "Orden", "text", ["orden", "numero", "numero orden", "folio"], true),
       field("date", "Fecha", "date", ["fecha"], true),
       field("productId", "ID producto", "text", ["id producto"]),
       field("productSku", "SKU producto", "text", ["sku", "sku producto"]),
@@ -529,16 +529,22 @@ export const IMPORT_MODULES: ImportModuleDefinition[] = [
         "producto terminado",
         "nombre producto",
       ]),
-      field("quantity", "Cantidad", "number", ["unidades", "cantidad a producir"], true),
+      field("quantity", "Cantidad", "number", ["cantidad", "unidades", "cantidad a producir"], true),
       field("wasteQuantity", "Desperdicio", "number", ["desperdicio", "desperdicio kg"]),
       field("estimatedMaterialCost", "Costo estimado materiales COP", "number", [
+        "costo estimado materiales cop",
         "costo estimado materiales",
         "costo directo materiales",
       ]),
       field("materialCostPerGoodUnit", "Costo materiales por unidad buena COP", "number", [
+        "costo materiales por unidad buena cop",
         "costo materiales por unidad buena",
         "costo unitario materiales",
       ]),
+      field("laborHours", "Horas trabajadas", "number", ["horas trabajadas"]),
+      field("laborHourlyRate", "Costo por hora COP", "number", ["costo por hora cop", "costo por hora"]),
+      field("energyCost", "Energía asignada COP", "number", ["energia asignada cop", "energia asignada"]),
+      field("overheadCost", "Otros costos de la orden COP", "number", ["otros costos de la orden cop", "otros costos de la orden"]),
       field("recipeVersionId", "ID versión de receta", "text", [
         "version receta id",
         "id version receta",
@@ -572,15 +578,17 @@ export const IMPORT_MODULES: ImportModuleDefinition[] = [
       field("materialProductId", "ID material", "text", ["id material"]),
       field("materialSku", "SKU material", "text", ["sku material", "sku"], true),
       field("materialName", "Material", "text", ["material"]),
-      field("quantity", "Cantidad consumida", "number", ["cantidad", "consumo"], true),
+      field("quantity", "Cantidad consumida", "number", ["cantidad consumida", "cantidad", "consumo"], true),
+      field("actualQuantity", "Cantidad real consumida", "number", ["cantidad real consumida"]),
       field("environmentalUnit", "Unidad ambiental", "text", ["unidad ambiental"]),
       field("environmentalConversionFactor", "Conversión ambiental", "number", [
         "conversion ambiental",
       ]),
       field("unitCostSnapshot", "Costo unitario snapshot COP", "number", [
+        "costo unitario snapshot cop",
         "costo unitario snapshot",
       ]),
-      field("lineCostSnapshot", "Costo línea snapshot COP", "number", ["costo linea snapshot"]),
+      field("lineCostSnapshot", "Costo línea snapshot COP", "number", ["costo linea snapshot cop", "costo linea snapshot"]),
     ],
     autoRequired: ["orderNumber", "materialSku", "quantity"],
   },
@@ -2780,6 +2788,10 @@ function importProductionOrders(
         completedAt: fieldDate(row, "completedAt") || (status === "completed" ? date : ""),
         estimatedMaterialCost: optionalNumber(row, "estimatedMaterialCost"),
         materialCostPerGoodUnit: optionalNumber(row, "materialCostPerGoodUnit"),
+        laborHours: optionalNumber(row, "laborHours"),
+        laborHourlyRate: optionalNumber(row, "laborHourlyRate"),
+        energyCost: optionalNumber(row, "energyCost"),
+        overheadCost: optionalNumber(row, "overheadCost"),
         recipeVersionId: textOptional(row, "recipeVersionId"),
         recipeVersionNumber: optionalNumber(row, "recipeVersionNumber"),
         expectedYieldPercent: optionalNumber(row, "expectedYieldPercent"),
@@ -2787,6 +2799,10 @@ function importProductionOrders(
       };
       if (order.quantity <= 0 || order.wasteQuantity < 0 || order.wasteQuantity > order.quantity)
         throw new Error("La cantidad producida o el desperdicio no son válidos.");
+      if ([order.laborHours, order.laborHourlyRate, order.energyCost, order.overheadCost].some(
+        (value) => value !== undefined && (value < 0 || order.status !== "completed"),
+      ))
+        throw new Error("Registra costos no negativos solo en órdenes terminadas.");
       if (
         (order.recipeVersionNumber !== undefined &&
           (!Number.isInteger(order.recipeVersionNumber) || order.recipeVersionNumber < 1)) ||
@@ -2839,6 +2855,9 @@ function importProductionConsumption(
         throw new Error("Selecciona una materia prima o insumo como material consumido.");
       const quantity = fieldNumber(row, "quantity", true);
       if (quantity <= 0) throw new Error("La cantidad consumida debe ser mayor que cero.");
+      const actualQuantity = optionalNumber(row, "actualQuantity");
+      if (actualQuantity !== undefined && (actualQuantity < 0 || order.status !== "completed"))
+        throw new Error("Registra un consumo real no negativo solo en órdenes terminadas.");
       if (order.consumedMaterials.some((item) => item.productId === material.id)) {
         setRowsResult(
           results,
@@ -2853,6 +2872,7 @@ function importProductionConsumption(
         sku: material.sku,
         productName: material.name,
         quantity,
+        actualQuantity,
         environmentalUnit: textOptional(row, "environmentalUnit"),
         environmentalConversionFactor: optionalNumber(row, "environmentalConversionFactor"),
         unitCostSnapshot: optionalNumber(row, "unitCostSnapshot"),

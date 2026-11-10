@@ -10,6 +10,7 @@ import {
 } from "./AppViews";
 import { Field, Modal, SelectField } from "./AppViews";
 import { calculateRecipeRequirements, estimateMaterialCost } from "../domain/costing";
+import type { ProductionClosingCosts } from "../domain/production-cost";
 import type {
   AppState,
   Company,
@@ -40,6 +41,8 @@ import type {
   RecipeVersionInput,
   Sale,
   SaleInput,
+  Quotation,
+  QuotationInput,
   SaleLineInput,
   FinancialAccount,
   CashMovementDirection,
@@ -598,18 +601,28 @@ export function SaleForm({
   state,
   onSave,
   onClose,
+  quote,
 }: {
   state: AppState;
-  onSave: (input: SaleInput) => void;
   onClose: () => void;
-}) {
+} & (
+  | { onSave: (input: SaleInput) => void; quote?: never }
+  | { onSave?: never; quote: { source?: Quotation; onSave: (input: QuotationInput) => void } }
+)) {
   const customers = state.contacts.filter((contact) => contact.role !== "supplier");
   const products = state.products.filter((product) => product.type === "finished");
-  const [lines, setLines] = useState<SaleLineInput[]>([
-    { productId: "", quantity: 1, unitPrice: 0 },
-  ]);
-  const [discount, setDiscount] = useState(0);
-  const [customerId, setCustomerId] = useState("");
+  const [lines, setLines] = useState<SaleLineInput[]>(() =>
+    quote?.source?.lines.map(({ productId, quantity, unitPrice }) => ({
+      productId: products.some((product) => product.id === productId) ? productId : "",
+      quantity,
+      unitPrice,
+    })) ?? [{ productId: "", quantity: 1, unitPrice: 0 }],
+  );
+  const [discount, setDiscount] = useState(quote?.source?.discount ?? 0);
+  const sourceCustomer = quote?.source?.customerId;
+  const [customerId, setCustomerId] = useState(
+    customers.some((item) => item.id === sourceCustomer) ? sourceCustomer ?? "" : "",
+  );
   const [invoiceStatus, setInvoiceStatus] = useState<InvoiceFollowUpStatus>("to_review");
   const subtotal = lines.reduce((sum, line) => sum + line.quantity * (line.unitPrice ?? 0), 0);
   const rawVat = lines.reduce((sum, line) => {
@@ -628,11 +641,18 @@ export function SaleForm({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    onSave({
+    const common = {
       date: readString(form, "date"),
       customerId,
       lines: lines.filter((line) => line.productId),
       discount,
+    };
+    if (quote) {
+      quote.onSave({ ...common, validUntil: readString(form, "validUntil") });
+      return;
+    }
+    onSave?.({
+      ...common,
       initialPayment: readNumber(form, "initialPayment"),
       initialPaymentMethod: readString(form, "initialPaymentMethod"),
       initialPaymentAccountId: readString(form, "initialPaymentAccountId") || undefined,
@@ -643,21 +663,26 @@ export function SaleForm({
     });
   }
   return (
-    <Modal title="Registrar venta" onClose={onClose} wide>
+    <Modal title={quote ? "Preparar cotización" : "Registrar venta"} onClose={onClose} wide>
       <form className="modal-body" onSubmit={submit}>
         <div className="form-grid">
-          <Field label="Fecha" name="date" type="date" initialValue={today()} required />
-          <Field label="Fecha para pagar el saldo" name="dueDate" type="date" />
+          <Field label="Fecha" name="date" type="date" initialValue={today()} max={quote ? today() : undefined} required />
+          {quote ? (
+            <Field label="Válida hasta" name="validUntil" type="date" initialValue={today()} required />
+          ) : (
+            <Field label="Fecha para pagar el saldo" name="dueDate" type="date" />
+          )}
           <ContactSelect
             contacts={customers}
             role="customer"
             name="customerId"
+            value={customerId}
             onChange={setCustomerId}
           />
           <div className="field full">
             <div className="line-section">
               <div className="line-section-header">
-                <strong>Productos de esta venta</strong>
+                <strong>{quote ? "Productos de la cotización" : "Productos de esta venta"}</strong>
                 <button
                   className="button button-secondary button-small"
                   type="button"
@@ -750,6 +775,7 @@ export function SaleForm({
               onChange={(event) => setDiscount(Number(event.target.value))}
             />
           </div>
+          {!quote && <>
           <Field
             label="Abono de hoy (pesos)"
             name="initialPayment"
@@ -797,6 +823,7 @@ export function SaleForm({
           />
           <Field label="Número de la factura (opcional)" name="externalInvoiceNumber" />
           <Field label="Fecha de la factura (opcional)" name="externalInvoiceDate" type="date" />
+          </>}
           <div className="field full">
             <div className="summary-total">
               <span>Total aproximado con descuento e IVA</span>
@@ -805,10 +832,11 @@ export function SaleForm({
           </div>
         </div>
         <div className="notice">
-          El IVA es un cálculo aproximado. Elegir una opción de factura solo te sirve de
-          recordatorio: no envía nada a la DIAN.
+          {quote
+            ? "Se guardarán los precios e impuestos ofrecidos. Las existencias se comprobarán al convertirla."
+            : "El IVA es un cálculo aproximado. Elegir una opción de factura solo te sirve de recordatorio: no envía nada a la DIAN."}
         </div>
-        <ModalFooter onClose={onClose} submitLabel="Guardar venta" />
+        <ModalFooter onClose={onClose} submitLabel={quote ? "Guardar cotización" : "Guardar venta"} />
       </form>
     </Modal>
   );
@@ -2253,14 +2281,26 @@ export function CompleteProductionForm({
   onClose,
 }: {
   order: ProductionOrder;
-  onSave: (wasteQuantity: number, date: string) => void;
+  onSave: (wasteQuantity: number, date: string, costs: ProductionClosingCosts) => void;
   onClose: () => void;
 }) {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
+    const optionalCost = (name: string) =>
+      readString(form, name) === "" ? undefined : readNumber(form, name);
     onSave(
-      readNumber(event.currentTarget, "wasteQuantity"),
-      readString(event.currentTarget, "completedAt"),
+      readNumber(form, "wasteQuantity"),
+      readString(form, "completedAt"),
+      {
+        actualQuantities: order.consumedMaterials.map((_, index) =>
+          readNumber(form, `actualMaterial-${index}`),
+        ),
+        laborHours: optionalCost("laborHours"),
+        laborHourlyRate: optionalCost("laborHourlyRate"),
+        energyCost: optionalCost("energyCost"),
+        overheadCost: optionalCost("overheadCost"),
+      },
     );
   }
   return (
@@ -2288,6 +2328,40 @@ export function CompleteProductionForm({
             required
           />
         </div>
+        {order.consumedMaterials.length > 0 && (
+          <fieldset>
+            <legend className="font-bold">Materiales usados</legend>
+            <p className="mb-3 text-muted">
+              Confirma lo que usaste. Si la cantidad cambió, Pyme360 ajustará el inventario.
+            </p>
+            <div className="form-grid">
+              {order.consumedMaterials.map((material, index) => (
+                <Field
+                  key={material.productId}
+                  label={material.unit ? `${material.productName} (${material.unit})` : material.productName}
+                  name={`actualMaterial-${index}`}
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  initialValue={material.quantity}
+                  required
+                />
+              ))}
+            </div>
+          </fieldset>
+        )}
+        <fieldset>
+          <legend className="font-bold">Costos de esta orden</legend>
+          <p className="mb-3 text-muted">
+            Escribe 0 si no hubo un costo. Deja en blanco los valores que aún no conoces.
+          </p>
+          <div className="form-grid">
+            <Field label="Horas trabajadas" name="laborHours" type="number" min="0" step="0.01" />
+            <Field label="Costo por hora (COP)" name="laborHourlyRate" type="number" min="0" step="1" />
+            <Field label="Energía asignada (COP)" name="energyCost" type="number" min="0" step="1" />
+            <Field label="Otros costos de la orden (COP)" name="overheadCost" type="number" min="0" step="1" />
+          </div>
+        </fieldset>
         <ModalFooter onClose={onClose} submitLabel="Completar y sumar al inventario" />
       </form>
     </Modal>

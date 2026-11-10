@@ -167,7 +167,9 @@ Si aparece “no se pudo validar la sesión”, comprueba que el servidor local 
 
 La lectura ocurre dentro del navegador. El archivo no se sube ni se conserva. Las columnas desconocidas se guardan como **Datos adicionales**.
 
-## Cuenta de empresa y sincronización opcional
+## Prototipo de sincronización central (desactivado)
+
+La edición actual usa SQLite y respaldos cifrados; no muestra el panel de sincronización ni inicia conexiones con una API central. Lo siguiente documenta el prototipo conservado en el código para desarrollo, no un paso de instalación necesario.
 
 El trabajo habitual sigue funcionando localmente. En **Administración → Nube y sincronización**, el primer administrador puede crear el espacio de empresa, verificar su correo y vincular una base local. Al vincular una base con datos, Pyme360 crea primero una copia `pyme360-before-cloud-<fecha>.sqlite3`. La cola local guarda los cambios como provisionales hasta que el servidor los confirme. El servidor agrupa cambios relacionados en lotes idempotentes; si detecta que otro usuario cambió el mismo registro, conserva el conflicto para resolverlo. Cada vínculo de cuenta central se asocia a un usuario local y a su rol, y sus errores de sesión se muestran por usuario. Al volver la red, la aplicación sincroniza automáticamente o puedes usar **Sincronizar ahora**.
 

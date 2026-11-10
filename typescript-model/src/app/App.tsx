@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   addContact,
   addProduct,
@@ -25,6 +25,12 @@ import {
   createProductionOrder,
   createPurchase,
   createSale,
+  createId,
+  previewSaleReturn,
+  registerSaleReturn,
+  saleReturnBlock,
+  createQuotation,
+  convertQuotation,
   deletePurchase,
   deleteElectronicDraft,
   deleteSale,
@@ -51,6 +57,8 @@ import type {
   Product,
   Purchase,
   Sale,
+  SaleReturnInput,
+  Quotation,
   TaxConfiguration,
   SupplierInvoiceDocument,
 } from "../domain/types";
@@ -60,6 +68,7 @@ import {
   type AuthUser,
   type AuthStatus,
 } from "../infrastructure/auth";
+import { LocalApiError } from "../infrastructure/local-api-error";
 import { loadState, parseBackup, saveState, StateConflictError } from "../infrastructure/storage";
 import { extractReceipt, rememberedProvider } from "../features/environment/consumption";
 import {
@@ -71,14 +80,17 @@ import {
   formatMoney,
   getInitialTheme,
   LoginScreen,
+  Modal,
   PasswordModal,
   UsersModal,
   NavIcon,
+  today,
 } from "./AppViews";
 import { EnvironmentPage } from "./screens/EnvironmentView";
 import { ElectronicInvoicingPanel } from "./screens/ElectronicInvoicing";
 import { CloudSyncPanel } from "./screens/CloudSyncPanel";
 import {
+  confirmCentralQuotation,
   getCloudSyncStatus,
   synchronizeNow,
   type CloudSyncStatus,
@@ -93,6 +105,8 @@ import { InventoryPage } from "./screens/InventoryScreen";
 import { ProductionPage } from "./screens/ProductionScreen";
 import { PurchasesPage } from "./screens/PurchasesScreen";
 import { SalesPage } from "./screens/SalesScreen";
+import { SaleReturnForm } from "./screens/SaleReturnForm";
+import { QuotationsList } from "./screens/QuotationsScreen";
 import type { Page, Theme, ModalState } from "./AppViews";
 import {
   CompanyForm,
@@ -118,6 +132,8 @@ import {
 } from "./AppForms";
 
 const NAV_COLLAPSED_STORAGE_KEY = "pyme360.nav-collapsed";
+// The shipped local edition uses SQLite. Drive is only an encrypted backup destination.
+const CLOUD_SYNC_ENABLED = false;
 
 function Workspace({
   user,
@@ -152,7 +168,9 @@ function Workspace({
   const [productionSection, setProductionSection] = useState<"orders" | "recipes">("orders");
   const [selectedRecipeProductId, setSelectedRecipeProductId] = useState<string>();
   const [expandedNavGroups, setExpandedNavGroups] = useState<Set<string>>(() => new Set());
-  const [salesSection, setSalesSection] = useState<"sales" | "documents">("sales");
+  const [salesSection, setSalesSection] = useState<"sales" | "documents" | "quotations">("sales");
+  const [convertingQuote, setConvertingQuote] = useState(false);
+  const [returningSale, setReturningSale] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => window.localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY) !== "false",
   );
@@ -178,14 +196,19 @@ function Workspace({
     error: false,
   });
 
-  function notify(message: string, error = false) {
+  const notify = useCallback((message: string, error = false, duration = error ? 7000 : 4200) => {
     if (toastTimer.current !== undefined) window.clearTimeout(toastTimer.current);
     setToast({ message, error });
     toastTimer.current = window.setTimeout(
       () => setToast({ message: "", error: false }),
-      error ? 7000 : 4200,
+      duration,
     );
-  }
+  }, []);
+
+  const notifyStorageError = useCallback((error: unknown) => {
+    const hasIncident = error instanceof LocalApiError && Boolean(error.incidentId);
+    notify(errorMessage(error), true, hasIncident ? 30_000 : undefined);
+  }, [notify]);
 
   function toggleSidebar() {
     const collapsed = !sidebarCollapsed;
@@ -219,6 +242,7 @@ function Workspace({
   }, []);
 
   async function refreshSyncStatus() {
+    if (!CLOUD_SYNC_ENABLED) return null;
     try {
       const next = await getCloudSyncStatus();
       setSyncStatus(next);
@@ -239,9 +263,10 @@ function Workspace({
       setStorageStatus(loaded.legacyReadOnly ? "error" : "ready");
       void refreshSyncStatus();
       if (loaded.warning) notify(loaded.warning, true);
+      return loaded.state;
     } catch (error) {
       setStorageStatus("error");
-      notify(errorMessage(error), true);
+      notifyStorageError(error);
     }
   }
 
@@ -262,14 +287,15 @@ function Workspace({
       .catch((error: unknown) => {
         if (!active) return;
         setStorageStatus("error");
-        notify(errorMessage(error), true);
+        notifyStorageError(error);
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [notify, notifyStorageError]);
 
   useEffect(() => {
+    if (!CLOUD_SYNC_ENABLED) return;
     function handleReconnect() {
       if (!navigator.onLine) return;
       void getCloudSyncStatus()
@@ -337,11 +363,45 @@ function Workspace({
         return false;
       } else {
         setStorageStatus("error");
-        notify(errorMessage(error), true);
+        notifyStorageError(error);
         return false;
       }
     } finally {
       saveInProgress.current = false;
+    }
+  }
+
+  async function confirmQuotation(quotation: Quotation) {
+    if (!canEdit || convertingQuote || saveInProgress.current) return;
+    setConvertingQuote(true);
+    try {
+      const sync = CLOUD_SYNC_ENABLED ? await getCloudSyncStatus() : null;
+      if (!sync?.configured) {
+        if (!await commit(convertQuotation(state, quotation.id, today()), "Venta registrada desde la cotización.")) return;
+      } else {
+        if (!navigator.onLine) throw new Error("Conéctate para convertir esta cotización.");
+        const synchronized = await synchronizeNow();
+        setSyncStatus(synchronized);
+        if (synchronized.pendingBatches || synchronized.conflicts || synchronized.rejectedBatches)
+          throw new Error("Resuelve los cambios pendientes de sincronización antes de convertir.");
+        if (!await refreshPersistedState()) throw new Error("Vuelve a cargar los datos e inténtalo.");
+        const { saleId } = await confirmCentralQuotation(quotation.id, revision.current);
+        try {
+          setSyncStatus(await synchronizeNow());
+          const loaded = await refreshPersistedState();
+          if (!loaded?.quotations.some((item) => item.id === quotation.id && item.saleId === saleId))
+            throw new Error();
+        } catch {
+          throw new Error("La central confirmó la venta. Vuelve a sincronizar para verla en este equipo.");
+        }
+        setModal(null);
+        notify("Venta registrada desde la cotización.");
+      }
+      setSalesSection("sales");
+    } catch (error) {
+      notify(errorMessage(error), true);
+    } finally {
+      setConvertingQuote(false);
     }
   }
 
@@ -353,10 +413,61 @@ function Workspace({
     }
   }
 
-  function confirmCashBalance(accountId: string | undefined, amount: number): boolean {
-    const account = state.financialAccounts.find((item) => item.id === accountId);
+  async function confirmSaleReturn(sale: Sale, input: SaleReturnInput, returnId: string) {
+    if (!canEdit || returningSale || saveInProgress.current) return;
+    setReturningSale(true);
+    try {
+      const sync = CLOUD_SYNC_ENABLED ? await getCloudSyncStatus() : null;
+      let current = state;
+      if (sync?.configured) {
+        if (!navigator.onLine) throw new Error("Conéctate para confirmar la devolución.");
+        const status = await synchronizeNow();
+        setSyncStatus(status);
+        const loaded = await refreshPersistedState();
+        if (!loaded) throw new Error("Vuelve a cargar los datos e inténtalo.");
+        current = loaded;
+        if (status.pendingBatches || status.rejectedBatches || status.conflicts)
+          throw new Error("Resuelve los cambios pendientes de sincronización antes de devolver.");
+      }
+      const latest = current.sales.find((item) => item.id === sale.id);
+      if (!latest) throw new Error("La venta ya no está disponible.");
+      if (latest.returns?.some((item) => item.id === returnId)) {
+        setModal(null);
+        notify("La devolución ya está registrada.");
+        return;
+      }
+      const shown = previewSaleReturn(sale, input.lines);
+      const checked = previewSaleReturn(latest, input.lines);
+      if (shown.total !== checked.total || shown.refund !== checked.refund)
+        throw new Error("El saldo cambió. Revisa el nuevo importe antes de confirmar.");
+      const next = registerSaleReturn(current, sale.id, input, returnId);
+      if (checked.refund && !confirmCashBalance(input.refundAccountId, checked.refund, current)) return;
+      if (!sync?.configured) {
+        await commit(next, "Devolución registrada.");
+        return;
+      }
+      await saveState(next, revision.current, false, returnId);
+      try {
+        setSyncStatus(await synchronizeNow());
+        const loaded = await refreshPersistedState();
+        if (!loaded?.sales.find((item) => item.id === sale.id)?.returns?.some((item) => item.id === returnId))
+          throw new Error();
+      } catch {
+        throw new Error("La central confirmó la devolución. Sincroniza para verla en este puesto.");
+      }
+      setModal(null);
+      notify("Devolución registrada.");
+    } catch (error) {
+      notifyStorageError(error);
+    } finally {
+      setReturningSale(false);
+    }
+  }
+
+  function confirmCashBalance(accountId: string | undefined, amount: number, current = state): boolean {
+    const account = current.financialAccounts.find((item) => item.id === accountId);
     if (!account) return true;
-    const result = financialAccountBalance(state, account) - amount;
+    const result = financialAccountBalance(current, account) - amount;
     return (
       result >= 0 ||
       window.confirm(`Esta operación dejará ${account.name} en ${formatMoney(result)}. ¿Continuar?`)
@@ -611,6 +722,21 @@ function Workspace({
         section={salesSection}
         onSectionChange={setSalesSection}
         onAdd={() => setModal({ type: "sale" })}
+        onAddQuotation={() => setModal({ type: "quotation" })}
+        quotations={
+          <QuotationsList
+            quotations={state.quotations}
+            sales={state.sales}
+            canEdit={canEdit}
+            onDuplicate={(source) => setModal({ type: "quotation", source })}
+            onConvert={(quotation) => setModal({ type: "convert-quotation", quotation })}
+            onDownload={(quotation) => {
+              void import("../features/sales/quotation-pdf")
+                .then(({ downloadQuotationPdf }) => downloadQuotationPdf(quotation))
+                .catch((error: unknown) => notify(errorMessage(error), true));
+            }}
+          />
+        }
         onPrepareInvoice={(sale) =>
           run(
             () => prepareElectronicInvoice(state, sale.id, user.displayName || user.username),
@@ -618,6 +744,7 @@ function Workspace({
           )
         }
         onPayment={(sale) => setModal({ type: "payment", sale })}
+        onReturn={(sale) => setModal({ type: "sale-return", sale, returnId: createId("return") })}
         onDelete={confirmDeleteSale}
         canEdit={canEdit}
         canDelete={isAdmin}
@@ -626,7 +753,7 @@ function Workspace({
             state={state}
             canEdit={canEdit}
             isAdmin={isAdmin}
-            onRefreshState={refreshPersistedState}
+            onRefreshState={async () => { await refreshPersistedState(); }}
             onDeleteDraft={(document) => {
               if (
                 window.confirm(
@@ -1181,7 +1308,7 @@ function Workspace({
                   </button>
                 </>
               )}
-              <button
+              {CLOUD_SYNC_ENABLED && <button
                 type="button"
                 className="workspace-profile-action"
                 onClick={() => {
@@ -1190,7 +1317,7 @@ function Workspace({
                 }}
               >
                 {syncActionLabel}
-              </button>
+              </button>}
               <button
                 type="button"
                 className="workspace-profile-action"
@@ -1412,6 +1539,49 @@ function Workspace({
           }
         />
       )}
+      {modal?.type === "sale-return" && (() => {
+        const sale = state.sales.find((item) => item.id === modal.sale.id);
+        return (
+          <SaleReturnForm
+            sale={sale ?? modal.sale}
+            accounts={state.financialAccounts}
+            blocked={sale ? saleReturnBlock(sale, state.electronicDocuments) : "La venta ya no está disponible."}
+            busy={returningSale}
+            onClose={() => setModal(null)}
+            onOpenInvoicing={() => { setModal(null); setSalesSection("documents"); }}
+            onSave={(input) => void confirmSaleReturn(sale ?? modal.sale, input, modal.returnId)}
+          />
+        );
+      })()}
+      {modal?.type === "quotation" && (
+        <SaleForm
+          state={state}
+          onClose={() => setModal(null)}
+          quote={{
+            source: modal.source,
+            onSave: (input) => run(() => createQuotation(state, input), "Cotización guardada."),
+          }}
+        />
+      )}
+      {modal?.type === "convert-quotation" && (
+        <Modal title="Convertir en venta" onClose={() => { if (!convertingQuote) setModal(null); }}>
+          <div className="modal-body">
+            <p>{modal.quotation.number} · {modal.quotation.customerName}</p>
+            <dl className="grid gap-2">
+              <div><dt>Total de la venta</dt><dd>{formatMoney(modal.quotation.total)}</dd></div>
+              <div><dt>Saldo inicial por cobrar</dt><dd>{formatMoney(modal.quotation.total)}</dd></div>
+            </dl>
+            <p>Se descontarán las existencias. Podrás registrar el abono desde Ventas.</p>
+            <div className="modal-footer">
+              <button className="button button-secondary" type="button" disabled={convertingQuote} onClick={() => setModal(null)}>Cancelar</button>
+              <button className="button button-primary" type="button" disabled={convertingQuote}
+                onClick={() => void confirmQuotation(modal.quotation)}>
+                {convertingQuote ? "Confirmando…" : "Confirmar venta"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {modal?.type === "purchase" && (
         <PurchaseForm
           state={state}
@@ -1616,9 +1786,9 @@ function Workspace({
         <CompleteProductionForm
           order={modal.order}
           onClose={() => setModal(null)}
-          onSave={(wasteQuantity, date) =>
+          onSave={(wasteQuantity, date, costs) =>
             run(
-              () => completeProductionOrder(state, modal.order.id, wasteQuantity, date),
+              () => completeProductionOrder(state, modal.order.id, wasteQuantity, date, costs),
               "Orden completada; producto terminado agregado al inventario.",
             )
           }
@@ -1636,7 +1806,7 @@ function Workspace({
       {modal?.type === "users" && isAdmin && (
         <UsersModal currentUser={user} onClose={() => setModal(null)} />
       )}
-      {syncPanelOpen && (
+      {CLOUD_SYNC_ENABLED && syncPanelOpen && (
         <CloudSyncPanel
           role={user.role}
           onClose={() => setSyncPanelOpen(false)}

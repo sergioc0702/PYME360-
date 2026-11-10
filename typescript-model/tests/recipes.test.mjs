@@ -32,11 +32,12 @@ async function loadModule(entryPoint, externalPackages = []) {
   );
 }
 
-const [business, storage, importer, exporter] = await Promise.all([
+const [business, storage, importer, exporter, costing] = await Promise.all([
   loadModule("src/domain/business.ts"),
   loadModule("src/infrastructure/storage.ts"),
   loadModule("src/features/spreadsheets/excel-import.ts"),
   loadModule("src/features/spreadsheets/exportExcel.ts", ["exceljs"]),
+  loadModule("src/domain/production-cost.ts"),
 ]);
 
 function addProduct(state, overrides) {
@@ -160,4 +161,49 @@ test("el libro Excel conserva IDs, versiones, rendimiento y componentes de recet
   assert.equal(plan.state.recipes[0].versions[0].baseQuantity, 12);
   assert.equal(plan.state.recipes[0].versions[0].expectedYieldPercent, 92.5);
   assert.deepEqual(plan.state.recipes[0].versions[0].components, [{ productId: material.id, quantity: 24 }]);
+});
+
+test("Excel conserva consumo real y costos de cierre sin repetir ajustes de inventario", () => {
+  let state = stateWithProducts();
+  const finished = state.products.find((product) => product.type === "finished");
+  const material = state.products.find((product) => product.type === "raw_material");
+  state = business.adjustStock(state, material.id, 10, "Existencia para el ensayo");
+  state = business.saveRecipeVersion(state, {
+    productId: finished.id,
+    baseQuantity: 1,
+    expectedYieldPercent: 100,
+    components: [{ productId: material.id, quantity: 2 }],
+  });
+  const recipe = state.recipes[0];
+  state = business.activateRecipeVersion(state, recipe.id, recipe.versions[0].id);
+  state = business.createProductionOrder(state, finished.id, 2, "2026-11-09");
+  const closing = { actualQuantities: [3], laborHours: 1.5, laborHourlyRate: 20, energyCost: 5, overheadCost: 0 };
+  const completed = business.completeProductionOrder(
+    state, state.productionOrders[0].id, 1, "2026-11-09", closing,
+  );
+  const workbook = exporter.buildExcelWorkbook(completed);
+  const prepared = [
+    ["Producción", "productionOrders"],
+    ["Consumo producción", "productionConsumption"],
+  ].flatMap(([sheetName, module]) => {
+    const worksheet = workbook.getWorksheet(sheetName);
+    const rows = [];
+    worksheet.eachRow({ includeEmpty: true }, (row) => rows.push(row.values.slice(1)));
+    const sheet = { name: sheetName, rows };
+    return importer.prepareImportRows(sheet, 0, module, importer.autoMapColumns(sheet, 0, module));
+  });
+  const plan = importer.buildImportPlan({ ...completed, productionOrders: [] }, prepared, "admin");
+  assert.equal(plan.errors, 0, JSON.stringify(plan.results));
+  assert.equal(plan.duplicates, 0);
+  const restored = plan.state.productionOrders[0];
+  assert.equal(restored.consumedMaterials[0].quantity, 4);
+  assert.equal(restored.consumedMaterials[0].actualQuantity, 3);
+  assert.equal(restored.laborHours, 1.5);
+  assert.equal(restored.laborHourlyRate, 20);
+  assert.deepEqual(costing.productionCostSummary(restored), {
+    actualMaterialCost: 15, laborCost: 30, total: 50, unitCost: 50,
+  });
+  assert.equal(costing.productionCostSummary({ ...restored, energyCost: undefined }).total, null);
+  assert.equal(costing.productionCostSummary({ ...restored, wasteQuantity: 2 }).unitCost, null);
+  assert.deepEqual(plan.state.inventoryMovements, completed.inventoryMovements);
 });

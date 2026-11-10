@@ -24,6 +24,10 @@ import type {
   PurchaseStatus,
   Sale,
   SaleInput,
+  SaleReturn,
+  SaleReturnInput,
+  Quotation,
+  QuotationInput,
   InventoryMovement,
   InventoryMovementType,
   FinancialAccount,
@@ -33,6 +37,7 @@ import type {
 } from "./types";
 import { convertUnit, DEFAULT_EMISSION_FACTORS, DEFAULT_SITE_ID } from "./environmental";
 import { calculateRecipeRequirements, estimateMaterialCost } from "./costing";
+import { productionCostSummary, type ProductionClosingCosts } from "./production-cost";
 
 export class BusinessError extends Error {
   constructor(message: string) {
@@ -50,6 +55,7 @@ export function createEmptyState(): AppState {
     products: [],
     recipes: [],
     sales: [],
+    quotations: [],
     taxConfiguration: {
       countryCode: "CO",
       currency: "COP",
@@ -587,8 +593,90 @@ export function outstandingBalance(
     );
   return Math.max(
     0,
-    sale.total + adjustments - sale.payments.reduce((sum, payment) => sum + payment.amount, 0),
+    netSaleTotal(sale) + adjustments - netSalePaid(sale),
   );
+}
+
+export function netSaleTotal(sale: Sale): number {
+  return sale.total - (sale.returns ?? []).reduce((sum, item) => sum + item.total, 0);
+}
+
+export function netSalePaid(sale: Sale): number {
+  return sale.payments.reduce((sum, payment) => sum + payment.amount, 0)
+    - (sale.returns ?? []).reduce((sum, item) => sum + item.refund, 0);
+}
+
+export function remainingReturnQuantity(sale: Sale, lineIndex: number): number {
+  const returned = (sale.returns ?? []).flatMap((item) => item.lines)
+    .filter((item) => item.lineIndex === lineIndex)
+    .reduce((sum, item) => sum + item.quantity, 0);
+  return Number((sale.lines[lineIndex].quantity - returned).toFixed(4));
+}
+
+export function saleReturnBlock(sale: Sale, documents: AppState["electronicDocuments"]): string | undefined {
+  if (sale.invoiceFollowUpStatus === "registered_externally" || sale.externalInvoiceNumber?.trim()
+      || documents.some((document) => document.saleId === sale.id))
+    return "Esta venta tiene una factura o documento asociado. En Vender > Facturas, prepara la nota crédito sobre la factura aceptada. Después verifica su aceptación con el proveedor antes de registrar la devolución física y el reembolso.";
+  if (!sale.lines.some((_, index) => remainingReturnQuantity(sale, index) > 0))
+    return "Ya se devolvieron todos los productos de esta venta.";
+}
+
+export function previewSaleReturn(sale: Sale, input: SaleReturnInput["lines"]) {
+  const used = new Set<number>();
+  const lines = input.map((item) => {
+    const original = sale.lines[item.lineIndex];
+    if (!Number.isInteger(item.lineIndex) || !original || used.has(item.lineIndex))
+      throw new BusinessError("Selecciona los renglones originales de la venta una sola vez.");
+    used.add(item.lineIndex);
+    requirePositive(item.quantity, "La cantidad devuelta");
+    const available = remainingReturnQuantity(sale, item.lineIndex);
+    if (item.quantity !== Number(item.quantity.toFixed(4)) || item.quantity > available)
+      throw new BusinessError(`Revisa la cantidad de ${original.productName}. Disponible para devolver: ${available}.`);
+    const previous = Number((original.quantity - available).toFixed(4));
+    const cumulative = Number((previous + item.quantity).toFixed(4));
+    const amount = roundCop(original.total * cumulative / original.quantity)
+      - roundCop(original.total * previous / original.quantity);
+    return { ...item, amount };
+  });
+  const total = lines.reduce((sum, item) => sum + item.amount, 0);
+  return { lines, total, refund: Math.max(0, total - outstandingBalance(sale)) };
+}
+
+export function registerSaleReturn(
+  state: AppState, saleId: string, input: SaleReturnInput, returnId = createId("return"),
+): AppState {
+  const next = cloneState(state);
+  const sale = requireValue(next.sales.find((item) => item.id === saleId), "No encontramos la venta.");
+  if (sale.returns?.some((item) => item.id === returnId)) return state;
+  const block = saleReturnBlock(sale, next.electronicDocuments);
+  if (block) throw new BusinessError(block);
+  if (!input.lines.length) throw new BusinessError("Indica al menos una cantidad para devolver.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || !Number.isFinite(Date.parse(input.date))
+      || new Date(input.date).toISOString().slice(0, 10) !== input.date || input.date < sale.date)
+    throw new BusinessError("La fecha de devolución debe ser igual o posterior a la venta.");
+  const reason = requireText(input.reason, "El motivo");
+  const preview = previewSaleReturn(sale, input.lines);
+  const record: SaleReturn = {
+    ...preview, id: returnId, date: input.date, reason, paymentCount: sale.payments.length,
+  };
+  if (record.refund) {
+    const accountId = requireValue(input.refundAccountId || null, "Selecciona la caja o banco del reembolso.");
+    validateAccount(next, accountId);
+    record.cashMovementId = addCashMovement(next, {
+      accountId, direction: "out", amount: record.refund, date: input.date,
+      method: "Reembolso", category: "Devolución de venta", description: `Reembolso ${sale.number}`,
+      sourceType: "sale", sourceId: sale.id,
+    }).id;
+  }
+  for (const line of record.lines) {
+    if (!line.restock) continue;
+    line.inventoryMovementId = addStock(next, sale.lines[line.lineIndex].productId, line.quantity, {
+      movementType: "adjustment", reason: `Devolución ${sale.number}`, sourceType: "sale",
+      sourceId: sale.id, occurredAt: `${input.date}T12:00:00.000Z`,
+    }).id;
+  }
+  sale.returns = [...(sale.returns ?? []), record];
+  return next;
 }
 
 export function payableBalance(purchase: Purchase): number {
@@ -714,6 +802,8 @@ export function prepareElectronicInvoice(
 ): AppState {
   const sale = state.sales.find((item) => item.id === saleId);
   if (!sale) throw new BusinessError("No encontramos la venta que se quiere facturar.");
+  if (sale.returns?.length)
+    throw new BusinessError("Esta venta tiene devoluciones. Revisa el importe con facturación antes de preparar el documento.");
   if (sale.invoiceFollowUpStatus === "registered_externally" || sale.externalInvoiceNumber.trim())
     throw new BusinessError(
       "Esta venta tiene una factura registrada por fuera de Pyme360. No prepares otra factura para evitar duplicados.",
@@ -1421,8 +1511,8 @@ export function reconcileInventoryCount(
 }
 
 // Ventas y recaudos
-function buildSaleLines(state: AppState, input: SaleInput, discount: number): Sale["lines"] {
-  if (input.lines.length === 0) throw new BusinessError("Agrega al menos un producto a la venta.");
+function buildSaleLines(state: AppState, input: Pick<SaleInput, "lines">, discount: number): Sale["lines"] {
+  if (input.lines.length === 0) throw new BusinessError("Agrega al menos un producto.");
 
   const prepared = input.lines.map((line) => {
     requirePositive(line.quantity, "La cantidad vendida");
@@ -1446,13 +1536,15 @@ function buildSaleLines(state: AppState, input: SaleInput, discount: number): Sa
   if (discount > subtotal) throw new BusinessError("El descuento no puede superar el subtotal.");
 
   let allocatedDiscount = 0;
+  let runningSubtotal = 0;
   return prepared.map((line, index) => {
+    runningSubtotal += line.subtotal;
     const discountShare =
       index === prepared.length - 1
         ? discount - allocatedDiscount
         : subtotal === 0
           ? 0
-          : roundCop((discount * line.subtotal) / subtotal);
+          : roundCop((discount * runningSubtotal) / subtotal) - allocatedDiscount;
     allocatedDiscount += discountShare;
     const taxableBase = Math.max(0, line.subtotal - discountShare);
     const vatAmount = roundCop((taxableBase * line.product.vatRate) / 100);
@@ -1472,8 +1564,74 @@ function buildSaleLines(state: AppState, input: SaleInput, discount: number): Sa
 }
 
 export function createSale(state: AppState, input: SaleInput): AppState {
+  return recordSale(state, input);
+}
+
+export function quotationStatus(quotation: Quotation, date: string) {
+  if (quotation.saleId) return "converted";
+  return quotation.validUntil < date ? "expired" : "active";
+}
+
+export function createQuotation(state: AppState, input: QuotationInput): AppState {
+  const company = state.company;
+  if (!company?.name.trim()) throw new BusinessError("Configura tu empresa antes de cotizar.");
+  for (const date of [input.date, input.validUntil]) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) ||
+        new Date(date).toISOString().slice(0, 10) !== date)
+      throw new BusinessError("Revisa la fecha de emisión y la vigencia.");
+  }
+  if (input.validUntil < input.date)
+    throw new BusinessError("La vigencia no puede terminar antes de la emisión.");
+  if (input.lines.length > 200)
+    throw new BusinessError("Una cotización admite hasta 200 renglones.");
+  if (input.lines.some((line) => Number(line.quantity.toFixed(4)) !== line.quantity))
+    throw new BusinessError("Usa hasta cuatro decimales en las cantidades cotizadas.");
+  const customer = getContact(state, input.customerId);
+  if (customer.role === "supplier") throw new BusinessError("Selecciona un cliente.");
+  const id = createId("quotation");
+  const discount = roundCop(input.discount);
+  const lines = buildSaleLines(state, input, discount);
+  const quotation: Quotation = {
+    id,
+    number: `C-${id.slice(-12).toUpperCase()}`,
+    date: input.date,
+    validUntil: input.validUntil,
+    company: { ...company },
+    customerId: customer.id,
+    customerName: customer.name,
+    customerTaxId: customer.taxId,
+    lines,
+    subtotal: lines.reduce((total, line) => total + line.subtotal, 0),
+    discount,
+    vatAmount: lines.reduce((total, line) => total + line.vatAmount, 0),
+    total: lines.reduce((total, line) => total + line.total, 0),
+  };
+  return { ...state, quotations: [quotation, ...state.quotations] };
+}
+
+export function convertQuotation(state: AppState, quotationId: string, date: string): AppState {
+  const quotation = requireValue(
+    state.quotations.find((item) => item.id === quotationId), "No encontramos la cotización.",
+  );
+  if (quotation.saleId) return state;
+  if (date < quotation.date || date > quotation.validUntil)
+    throw new BusinessError("La cotización está fuera de vigencia. Duplica la oferta para renovarla.");
+  if (!state.contacts.some((contact) => contact.id === quotation.customerId && contact.role !== "supplier"))
+    throw new BusinessError(`El cliente ${quotation.customerName} ya no está disponible para ventas.`);
+  for (const line of quotation.lines) {
+    if (!state.products.some((product) => product.id === line.productId && product.type === "finished"))
+      throw new BusinessError(`El producto ${line.productName} ya no está disponible para ventas.`);
+  }
+  return recordSale(state, {
+    date, customerId: quotation.customerId, lines: quotation.lines, discount: quotation.discount,
+    initialPayment: 0, initialPaymentMethod: "", invoiceFollowUpStatus: "to_review",
+    externalInvoiceNumber: "", externalInvoiceDate: "",
+  }, quotation);
+}
+
+function recordSale(state: AppState, input: SaleInput, quotation?: Quotation): AppState {
   const next = cloneState(state);
-  const saleId = createId("sale");
+  const saleId = quotation ? `sale-${quotation.id}` : createId("sale");
   validateAccount(next, input.initialPaymentAccountId);
   const customer = getContact(next, input.customerId);
   if (customer.role === "supplier") {
@@ -1481,11 +1639,8 @@ export function createSale(state: AppState, input: SaleInput): AppState {
   }
 
   const discount = roundCop(input.discount);
-  const subtotal = input.lines.reduce((sum, line) => {
-    const product = getProduct(next, line.productId);
-    return sum + roundCop(line.quantity * roundCop(line.unitPrice ?? product.unitPrice));
-  }, 0);
-  const lines = buildSaleLines(next, input, discount);
+  const lines = quotation ? structuredClone(quotation.lines) : buildSaleLines(next, input, discount);
+  const subtotal = lines.reduce((sum, line) => sum + line.subtotal, 0);
   const vatAmount = lines.reduce((sum, line) => sum + line.vatAmount, 0);
   const total = lines.reduce((sum, line) => sum + line.total, 0);
   requireNonNegative(input.initialPayment, "El abono inicial");
@@ -1502,12 +1657,13 @@ export function createSale(state: AppState, input: SaleInput): AppState {
   }
   for (const [productId, quantity] of requestedByProduct) {
     const product = getProduct(next, productId);
-    if (quantity > product.stock) {
+    const stockChange = quotation ? Number(quantity.toFixed(4)) : quantity;
+    if (stockChange > product.stock) {
       throw new BusinessError(
         `No hay suficiente inventario de ${product.name}. Disponible: ${product.stock} ${product.unit}.`,
       );
     }
-    addStock(next, productId, -quantity, {
+    addStock(next, productId, -stockChange, {
       movementType: "sale",
       reason: "Salida por venta",
       sourceType: "sale",
@@ -1536,7 +1692,7 @@ export function createSale(state: AppState, input: SaleInput): AppState {
     ),
     date: input.date,
     customerId: customer.id,
-    customerName: customer.name,
+    customerName: quotation?.customerName ?? customer.name,
     lines,
     subtotal,
     discount,
@@ -1548,6 +1704,12 @@ export function createSale(state: AppState, input: SaleInput): AppState {
     externalInvoiceDate: input.externalInvoiceDate,
     dueDate: input.dueDate || undefined,
   };
+  if (quotation) {
+    sale.quotationId = quotation.id;
+    next.quotations = next.quotations.map((item) =>
+      item.id === quotation.id ? { ...item, saleId } : item,
+    );
+  }
   if (payments[0]) {
     const movement = addCashMovement(next, {
       accountId: input.initialPaymentAccountId || undefined,
@@ -1686,6 +1848,8 @@ export function deleteSale(state: AppState, saleId: string): AppState {
       "Esta venta tiene un documento electrónico. Si es un borrador sin enviar, elimínalo primero en Facturación y documentos; los documentos enviados se conservan como historial.",
     );
   const sale = next.sales[index];
+  if (sale.returns?.length)
+    throw new BusinessError("La venta tiene devoluciones y se conserva en el historial.");
   const hasLedgerMovements = next.inventoryMovements.some(
     (movement) => movement.sourceType === "sale" && movement.sourceId === saleId,
   );
@@ -1975,6 +2139,7 @@ export function completeProductionOrder(
   orderId: string,
   wasteQuantity: number,
   completedAt: string,
+  costs?: ProductionClosingCosts,
 ): AppState {
   const next = cloneState(state);
   const order = requireValue(
@@ -1985,10 +2150,45 @@ export function completeProductionOrder(
   requireNonNegative(wasteQuantity, "El desperdicio");
   if (wasteQuantity > order.quantity)
     throw new BusinessError("El desperdicio no puede superar las unidades procesadas.");
+  if (costs) {
+    if (costs.actualQuantities.length !== order.consumedMaterials.length)
+      throw new BusinessError("Revisa el consumo de todos los materiales de la orden.");
+    for (const [value, label] of [
+      [costs.laborHours, "Las horas trabajadas"],
+      [costs.laborHourlyRate, "La tarifa por hora"],
+      [costs.energyCost, "El costo de energía"],
+      [costs.overheadCost, "Los otros costos"],
+    ] as const) {
+      if (value !== undefined) requireNonNegative(value, label);
+    }
+    for (const [index, material] of order.consumedMaterials.entries()) {
+      const quantity = costs.actualQuantities[index];
+      requireNonNegative(quantity, `El consumo de ${material.productName}`);
+      material.actualQuantity = Number(quantity.toFixed(4));
+      const difference = Number((material.quantity - material.actualQuantity).toFixed(4));
+      if (difference !== 0) {
+        addStock(next, material.productId, difference, {
+          movementType: "production_consumption",
+          reason: "Ajuste al consumo real de producción",
+          sourceType: "production",
+          sourceId: orderId,
+          occurredAt: `${completedAt}T12:00:00.000Z`,
+        });
+      }
+    }
+    order.laborHours = costs.laborHours;
+    order.laborHourlyRate = costs.laborHourlyRate;
+    order.energyCost = costs.energyCost === undefined ? undefined : roundCop(costs.energyCost);
+    order.overheadCost = costs.overheadCost === undefined ? undefined : roundCop(costs.overheadCost);
+  }
+  const goodOutputQuantity = order.quantity - wasteQuantity;
+  const materialCost = costs
+    ? productionCostSummary(order).actualMaterialCost
+    : order.estimatedMaterialCost;
   const product = getProduct(next, order.productId);
-  if (order.estimatedMaterialCost != null && order.quantity > wasteQuantity)
-    blendUnitCost(product, order.quantity - wasteQuantity, order.estimatedMaterialCost);
-  addStock(next, product.id, order.quantity - wasteQuantity, {
+  if (materialCost != null && goodOutputQuantity > 0)
+    blendUnitCost(product, goodOutputQuantity, materialCost);
+  addStock(next, product.id, goodOutputQuantity, {
     movementType: "production_output",
     reason: "Entrada de producto terminado",
     sourceType: "production",
@@ -1998,11 +2198,10 @@ export function completeProductionOrder(
   order.wasteQuantity = wasteQuantity;
   order.status = "completed";
   order.completedAt = completedAt;
-  const goodOutputQuantity = order.quantity - wasteQuantity;
   order.materialCostPerGoodUnit =
-    order.estimatedMaterialCost == null || goodOutputQuantity <= 0
+    materialCost == null || goodOutputQuantity <= 0
       ? null
-      : roundCop(order.estimatedMaterialCost / goodOutputQuantity);
+      : roundCop(materialCost / goodOutputQuantity);
   return next;
 }
 

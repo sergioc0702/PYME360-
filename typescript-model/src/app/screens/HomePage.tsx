@@ -47,7 +47,10 @@ export function HomePage({
   const month = currentMonth();
   const monthSales = state.sales
     .filter((sale) => sale.date.startsWith(month))
-    .reduce((sum, sale) => sum + sale.total, 0);
+    .reduce((sum, sale) => sum + sale.total, 0)
+    - state.sales.reduce((sum, sale) => sum + (sale.returns ?? [])
+      .filter((item) => item.date.startsWith(month))
+      .reduce((value, item) => value + item.total, 0), 0);
   const receivable = state.sales.reduce(
     (sum, sale) => sum + outstandingBalance(sale, state.electronicDocuments),
     0,

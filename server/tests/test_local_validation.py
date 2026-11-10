@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
 import tempfile
 import threading
 import unittest
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from copy import deepcopy
+from http.client import HTTPConnection
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -132,6 +135,249 @@ class PaymentIntegrityTests(unittest.TestCase):
     def test_older_saved_data_is_not_blocked_while_it_migrates(self):
         previous = {**sale_state(), "schemaVersion": 1}
         self.assertIsNone(self.check(previous, sale_state(total=1)))
+
+
+class LocalStateSaveTests(unittest.TestCase):
+    state_path = "/api/v1/typescript-model/state"
+
+    def setUp(self):
+        temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_directory.cleanup)
+        data_dir = Path(temporary_directory.name)
+        paths = {
+            "DATA_DIR": data_dir,
+            "DB_PATH": data_dir / "test.sqlite3",
+            "BACKUP_DIR": data_dir / "backups",
+            "OFFSITE_CONFIG": data_dir / "offsite-backup.json",
+            "OFFSITE_STATUS": data_dir / "offsite-backup-status.json",
+            "BENCHMARK_DIR": data_dir / "benchmarks",
+            "BENCHMARK_SNAPSHOT_PATH": data_dir / "benchmarks" / "official_snapshots.csv",
+        }
+        for name, value in paths.items():
+            setting = patch.object(server_module, name, value)
+            setting.start()
+            self.addCleanup(setting.stop)
+        server_module.initialize_database()
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), server_module.Pyme360Handler)
+        self.port = httpd.server_port
+        thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.01})
+        thread.start()
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(httpd.shutdown)
+
+        password = "test-password"
+        status, body, cookie = self.request(
+            "POST", "/api/v1/auth/bootstrap", {"username": "admin", "password": password}
+        )
+        self.assertEqual(status, 200, body)
+        self.admin_cookie = cookie.split(";", 1)[0]
+        self.cookies = {}
+        for role in ("operator", "viewer"):
+            credentials = {"username": role, "password": password}
+            status, body, _ = self.request(
+                "POST", "/api/v1/auth/users", {**credentials, "role": role}, self.admin_cookie
+            )
+            self.assertEqual(status, 201, body)
+            status, body, cookie = self.request("POST", "/api/v1/auth/login", credentials)
+            self.assertEqual(status, 200, body)
+            self.cookies[role] = cookie.split(";", 1)[0]
+
+        self.initial = server_module.empty_sync_state()
+        self.initial["products"] = [{"id": "p1", "stock": 10}]
+        self.initial["inventoryMovements"] = [
+            {"id": "opening", "productId": "p1", "quantity": 10, "balanceAfter": 10}
+        ]
+        self.initial["contacts"] = [{"id": "c1", "name": "Cliente de prueba"}]
+        self.initial["financialAccounts"] = [{"id": "register", "openingBalance": 0, "active": True}]
+        status, body = self.put(self.initial, revision=0, cookie=self.admin_cookie)
+        self.assertEqual(status, 200, body)
+        self.revision = body["revision"]
+        with server_module.db_session() as connection:
+            connection.execute(
+                """INSERT INTO sync_configuration
+                   (id, api_url, workspace_id, device_id, connected_by_user_id, updated_at)
+                   SELECT 1, 'https://example.invalid', 'workspace', 'device', id, created_at
+                   FROM users WHERE username = 'admin'"""
+            )
+
+    def request(self, method, path, payload, cookie=None):
+        connection = HTTPConnection("127.0.0.1", self.port, timeout=5)
+        headers = {"Content-Type": "application/json"}
+        if cookie:
+            headers["Cookie"] = cookie
+        try:
+            connection.request(method, path, json.dumps(payload), headers)
+            response = connection.getresponse()
+            return response.status, json.loads(response.read()), response.getheader("Set-Cookie")
+        finally:
+            connection.close()
+
+    def put(self, state, revision, cookie=None, restore=False):
+        path = self.state_path + ("?restore=1" if restore else "")
+        payload = {"state": state, "expectedRevision": revision}
+        status, body, _ = self.request("PUT", path, payload, cookie)
+        return status, body
+
+    def snapshot(self):
+        with server_module.db_session() as connection:
+            return (
+                [tuple(row) for row in connection.execute("SELECT * FROM typescript_model_state")],
+                [tuple(row) for row in connection.execute("SELECT * FROM audit_log ORDER BY id")],
+                [tuple(row) for row in connection.execute("SELECT * FROM sync_outbox ORDER BY batch_id")],
+            )
+
+    def sale_with_payment(self, movement=True):
+        sale = with_payment(sale_state(), 40, movement=movement)
+        for cash_movement in sale["cashMovements"]:
+            cash_movement.update(accountId="register", sourceType="sale", sourceId="s1")
+        return {
+            **self.initial,
+            **sale,
+            "products": [{"id": "p1", "stock": 9}],
+            "inventoryMovements": [
+                *self.initial["inventoryMovements"],
+                {"id": "sold", "productId": "p1", "quantity": -1, "balanceAfter": 9,
+                 "sourceType": "sale", "sourceId": "s1"},
+            ],
+        }
+
+    def test_session_and_roles_are_enforced(self):
+        before = self.snapshot()
+        for cookie, restore, expected in (
+            (None, False, 401),
+            (self.cookies["viewer"], False, 403),
+            (self.cookies["operator"], True, 403),
+        ):
+            with self.subTest(restore=restore, expected=expected):
+                status, body = self.put(self.sale_with_payment(), self.revision, cookie, restore)
+                self.assertEqual(status, expected, body)
+                self.assertEqual(self.snapshot(), before)
+
+    def test_offsite_status_requires_session(self):
+        server_module.OFFSITE_CONFIG.write_text('{"provider":"google_drive"}', encoding="utf-8")
+        server_module.record_offsite_status("google_drive", name="respaldo-cifrado.json")
+        status, _, _ = self.request("GET", "/api/v1/backups/offsite-status", {}, None)
+        self.assertEqual(status, 401)
+        status, body, _ = self.request("GET", "/api/v1/backups/offsite-status", {}, self.admin_cookie)
+        self.assertEqual(status, 200)
+        self.assertTrue(body["configured"])
+        self.assertEqual(body["provider"], "google_drive")
+        self.assertEqual(body["lastFileName"], "respaldo-cifrado.json")
+
+    def test_drive_failure_does_not_undo_local_save(self):
+        server_module.OFFSITE_CONFIG.write_text('{"provider":"google_drive"}', encoding="utf-8")
+        with patch.object(server_module, "create_offsite_backup", side_effect=RuntimeError("sin red")):
+            status, body = self.put(self.sale_with_payment(), self.revision, self.admin_cookie)
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["savedLocally"])
+        self.assertEqual(server_module.typescript_model_state_row()["revision"], self.revision + 1)
+        self.assertTrue(json.loads(server_module.OFFSITE_STATUS.read_text(encoding="utf-8"))["failed"])
+
+    def test_stale_revision_returns_current_state_without_changes(self):
+        before = self.snapshot()
+        status, body = self.put(self.sale_with_payment(), self.revision - 1, self.cookies["operator"])
+        self.assertEqual(status, 409, body)
+        self.assertEqual(body["state"], self.initial)
+        self.assertEqual(body["revision"], self.revision)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_payment_without_cash_movement_is_rejected_without_changes(self):
+        before = self.snapshot()
+        status, body = self.put(self.sale_with_payment(movement=False), self.revision, self.cookies["operator"])
+        self.assertEqual(status, 400, body)
+        self.assertIn("entrada o salida", body["error"])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_sale_with_payment_saves_state_audit_and_sync_batch(self):
+        _, before_audit, _ = self.snapshot()
+        updated = self.sale_with_payment()
+        status, body = self.put(updated, self.revision, self.cookies["operator"])
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["revision"], self.revision + 1)
+        self.assertEqual(body["pendingSyncBatches"], 1)
+        stored = server_module.typescript_model_state_row()
+        self.assertEqual(stored["revision"], body["revision"])
+        self.assertEqual(stored["state"], updated)
+        sale = stored["state"]["sales"][0]
+        self.assertEqual(sale["total"] - sum(payment["amount"] for payment in sale["payments"]), 60)
+        with server_module.db_session() as connection:
+            audit = connection.execute(
+                "SELECT actor_username, entity_type, entity_id FROM audit_log ORDER BY id"
+            ).fetchall()
+            self.assertIn(("operator", "sales", "s1"), [tuple(row) for row in audit[len(before_audit):]])
+            rows = connection.execute("SELECT status, payload_json FROM sync_outbox").fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["status"], "pending")
+            changes = json.loads(rows[0]["payload_json"])["changes"]
+            self.assertEqual(
+                {(change["entityType"], change["entityId"]) for change in changes},
+                {("sales", "s1"), ("products", "p1"), ("inventoryMovements", "sold"), ("cashMovements", "cash-pay-0")},
+            )
+
+    def test_local_return_requires_a_matching_refund_and_saves_the_ledger_once(self):
+        with server_module.db_session() as connection:
+            connection.execute("DELETE FROM sync_configuration")
+        sale = self.sale_with_payment()
+        operator = self.cookies["operator"]
+        status, body = self.put(sale, self.revision, operator)
+        self.assertEqual(200, status, body)
+        revision = body["revision"]
+        before = self.snapshot()
+        returned = deepcopy(sale)
+        returned["sales"][0]["returns"] = [{
+            "id": "return-one", "date": "2026-11-01", "reason": "Cambio", "paymentCount": 1,
+            "total": 100, "refund": 40, "cashMovementId": "refund-one",
+            "lines": [{"lineIndex": 0, "quantity": 1, "amount": 100, "restock": True,
+                       "inventoryMovementId": "stock-one"}],
+        }]
+        returned["products"][0]["stock"] = 10
+        returned["inventoryMovements"].append({
+            "id": "stock-one", "productId": "p1", "quantity": 1, "balanceAfter": 10,
+            "movementType": "adjustment", "sourceType": "sale", "sourceId": "s1",
+        })
+        status, body = self.put(returned, revision, operator)
+        self.assertEqual(400, status, body)
+        self.assertEqual(before, self.snapshot())
+        returned["cashMovements"].append({
+            "id": "refund-one", "accountId": "register", "date": "2026-11-01", "direction": "out",
+            "amount": 40, "category": "Devolución de venta", "sourceType": "sale", "sourceId": "s1",
+        })
+        status, body = self.put(returned, revision, self.cookies["viewer"])
+        self.assertEqual(403, status, body)
+        self.assertEqual(before, self.snapshot())
+        status, body = self.put(returned, revision, operator)
+        self.assertEqual(200, status, body)
+        self.assertEqual(returned, server_module.typescript_model_state_row()["state"])
+        after = self.snapshot()
+        self.assertEqual(len(before[1]) + 4, len(after[1]))
+        status, body = self.put(returned, revision, operator)
+        self.assertEqual(409, status, body)
+        self.assertEqual(after, self.snapshot())
+
+    def test_sqlite_error_at_enqueue_rolls_back_and_redacts_detail(self):
+        with server_module.db_session() as connection:
+            connection.execute(
+                """CREATE TRIGGER fail_enqueue AFTER INSERT ON sync_outbox
+                   BEGIN SELECT RAISE(ABORT, 'private SQLite diagnostic'); END"""
+            )
+        before = self.snapshot()
+        with self.assertLogs("pyme360.local", level="ERROR") as logs:
+            status, body = self.put(self.sale_with_payment(), self.revision, self.cookies["operator"])
+        self.assertEqual(status, 500, body)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(
+            body["error"],
+            "No se guardaron los cambios. Revisa si hay espacio disponible y vuelve a intentarlo.",
+        )
+        self.assertEqual(set(body), {"error", "incidentId"})
+        self.assertTrue(body["incidentId"])
+        log = "\n".join(logs.output)
+        self.assertIn(body["incidentId"], log)
+        self.assertIn("save_local_state", log)
+        self.assertIn("IntegrityError", log)
+        self.assertNotIn("private SQLite diagnostic", log)
 
 
 class CloudRedirectTests(unittest.TestCase):

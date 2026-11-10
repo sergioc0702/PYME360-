@@ -210,6 +210,8 @@ function productionForPeriod(
     (sum, order) =>
       sum +
       order.consumedMaterials.reduce((materialSum, item) => {
+        const quantity = item.actualQuantity ?? item.quantity;
+        if (quantity === 0) return materialSum;
         if (
           item.environmentalUnit?.toLowerCase() !== "kg" ||
           !item.environmentalConversionFactor ||
@@ -218,7 +220,7 @@ function productionForPeriod(
           unsupportedMaterialUnit = true;
           return materialSum;
         }
-        return materialSum + item.quantity * item.environmentalConversionFactor;
+        return materialSum + quantity * item.environmentalConversionFactor;
       }, 0),
     0,
   );

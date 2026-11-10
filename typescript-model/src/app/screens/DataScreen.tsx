@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { AppState } from "../../domain/types";
 import type { UserRole } from "../../infrastructure/auth";
 import {
@@ -7,18 +7,20 @@ import {
   isEncryptedBackup,
 } from "../../infrastructure/backup-crypto";
 import { serializeBackup } from "../../infrastructure/storage";
-import { Field, Modal, errorMessage, formatNumber, today } from "../AppViews";
+import { Field, Modal, errorMessage, formatNumber } from "../AppViews";
 import { ExcelImportWizard } from "./ExcelImport";
 
-async function downloadBackup(state: AppState, password: string): Promise<void> {
+async function downloadBackup(state: AppState, password: string): Promise<string> {
   const content = await encryptBackup(serializeBackup(state), password);
   const file = new Blob([content], { type: "application/json" });
   const url = URL.createObjectURL(file);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `pyme360-respaldo-${today()}.json`;
+  const fileName = `pyme360-respaldo-${new Date().toISOString().replace(/[:.]/g, "-")}-${crypto.randomUUID().slice(0, 8)}.json`;
+  link.download = fileName;
   link.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return fileName;
 }
 
 function BackupPasswordModal({
@@ -104,6 +106,19 @@ export function DataPage({
   const [exportingExcel, setExportingExcel] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [protecting, setProtecting] = useState(false);
+  const [downloadedBackupName, setDownloadedBackupName] = useState("");
+  const [offsiteStatus, setOffsiteStatus] = useState<{
+    configured: boolean; provider?: string; lastSuccessAt?: string | null;
+    lastFileName?: string | null; failed?: boolean;
+  } | null>(null);
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/v1/backups/offsite-status", { credentials: "same-origin" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((value) => { if (active && value) setOffsiteStatus(value); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
   const [encryptedFile, setEncryptedFile] = useState<{ name: string; content: string } | null>(
     null,
   );
@@ -159,12 +174,21 @@ export function DataPage({
 
       <section aria-labelledby="datos-respaldo">
         <h2 id="datos-respaldo">Respaldo</h2>
+        {offsiteStatus?.configured && (
+          <p className={offsiteStatus.failed ? "notice warning" : "notice"} role="status">
+            {offsiteStatus.provider === "google_drive" ? "Google Drive" : "Carpeta sincronizada"}
+            {offsiteStatus.lastSuccessAt
+              ? ` · Última copia confirmada: ${new Date(offsiteStatus.lastSuccessAt).toLocaleString("es-CO")}`
+              : " · Aún no hay una copia confirmada"}
+            {offsiteStatus.failed && " · El último intento falló; revisa la conexión y la cuenta."}
+          </p>
+        )}
         <ul className="task-list">
           <li>
             <div>
               <strong>Descargar un respaldo</strong>
               <span>
-                Un archivo con todos los datos de tu empresa, protegido con una contraseña.
+                Una copia cifrada de los datos de tu empresa. Guárdala fuera de este computador.
               </span>
             </div>
             <button className="action-primary" type="button" onClick={() => setProtecting(true)}>
@@ -176,7 +200,7 @@ export function DataPage({
               <strong>Recuperar un respaldo</strong>
               <span>
                 {canRestore
-                  ? "Cambia todos los datos de ahora por los del archivo. Los usuarios y el historial se conservan."
+                  ? "Reemplaza los datos del negocio. Se conservan los usuarios y la auditoría de este equipo. Si es una instalación nueva, crea primero un administrador local."
                   : "Solo un administrador puede recuperar un respaldo."}
               </span>
             </div>
@@ -197,6 +221,15 @@ export function DataPage({
             )}
           </li>
         </ul>
+        <div role="status">
+          {downloadedBackupName && (
+            <p className="notice">
+              Se inició la descarga de <strong>{downloadedBackupName}</strong>. Búscalo en las
+              descargas del navegador, cópialo a una USB o a una ubicación accesible desde otro
+              equipo y comprueba que el archivo esté allí. Guarda la contraseña por separado.
+            </p>
+          )}
+        </div>
       </section>
 
       <section aria-labelledby="datos-excel">
@@ -281,7 +314,7 @@ export function DataPage({
           mode="protect"
           onClose={() => setProtecting(false)}
           onSubmit={async (password) => {
-            await downloadBackup(state, password);
+            setDownloadedBackupName(await downloadBackup(state, password));
             setProtecting(false);
           }}
         />

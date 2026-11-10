@@ -6,6 +6,9 @@ import os
 import sys
 import unittest
 import urllib.parse
+import uuid
+from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 TEST_DATABASE_URL = os.environ.get("CLOUD_TEST_DATABASE_URL", "").strip()
@@ -146,6 +149,10 @@ class CloudApiPostgresIntegrationTests(unittest.TestCase):
         viewer_headers = {"Authorization": f"Bearer {viewer_login.json()['accessToken']}"}
         denied = self.client.post("/api/v1/sync/push", headers=viewer_headers, json=self.product_batch("viewer-write"))
         self.assertEqual(403, denied.status_code)
+        denied_conversion = self.client.post(
+            "/api/v1/quotations/quotation-12345678/convert", headers=viewer_headers,
+        )
+        self.assertEqual(403, denied_conversion.status_code)
 
     def test_business_validation_rejects_the_entire_batch_without_persisting_any_record(self) -> None:
         workspace, email = self.create_workspace("validation@example.test", "Validation")
@@ -160,6 +167,127 @@ class CloudApiPostgresIntegrationTests(unittest.TestCase):
         corrected = self.product_batch("batch-invalid", stock=5)
         accepted = self.client.post("/api/v1/sync/push", headers=headers, json=corrected)
         self.assertEqual(200, accepted.status_code, accepted.text)
+
+    def test_two_sessions_converting_one_quotation_get_one_sale_and_one_stock_exit(self) -> None:
+        from quotation_validation import colombian_date
+
+        workspace, email = self.create_workspace("quotes@example.test", "Quotes")
+        _, first_headers = self.login(workspace, email)
+        _, second_headers = self.login(workspace, email)
+        today = colombian_date()
+        quote_id = "quotation-12345678"
+        line = {
+            "productId": "product-1", "productName": "Producto", "sku": "P1", "quantity": 2,
+            "unitPrice": 100, "vatRate": 19, "subtotal": 200, "discountShare": 10,
+            "vatAmount": 36, "total": 226,
+        }
+        quote = {
+            "id": quote_id, "number": "C-12345678", "date": today, "validUntil": today,
+            "company": {"name": "Taller", "taxId": "123", "city": "Duitama"},
+            "customerId": "c1", "customerName": "Cliente", "customerTaxId": "",
+            "lines": [line], "subtotal": 200, "discount": 10, "vatAmount": 36, "total": 226,
+        }
+        seed = self.product_batch("quote-seed")
+        seed["changes"].extend([
+            {"entityType": "contacts", "entityId": "c1", "baseVersion": 0, "action": "upsert",
+             "payload": {"id": "c1", "name": "Cliente", "role": "customer"}},
+            {"entityType": "quotations", "entityId": quote_id, "baseVersion": 0, "action": "upsert",
+             "payload": quote},
+        ])
+        response = self.client.post("/api/v1/sync/push", headers=first_headers, json=seed)
+        self.assertEqual(200, response.status_code, response.text)
+        endpoint = f"/api/v1/quotations/{quote_id}/convert"
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            requests = [
+                executor.submit(self.client.post, endpoint, headers=headers)
+                for headers in (first_headers, second_headers)
+            ]
+            for result in requests:
+                conversion = result.result(timeout=15)
+                self.assertEqual(200, conversion.status_code, conversion.text)
+                self.assertEqual({"saleId": f"sale-{quote_id}"}, conversion.json())
+        retry = self.client.post(endpoint, headers=second_headers)
+        self.assertEqual({"saleId": f"sale-{quote_id}"}, retry.json())
+        pulled = self.client.get("/api/v1/sync/pull", headers=second_headers, params={"cursor": response.json()["cursor"]})
+        changes = pulled.json()["changes"]
+        self.assertEqual(4, len(changes))
+        self.assertEqual(1, len({item["batchId"] for item in changes}))
+        records = {item["entityType"]: item["payload"] for item in changes}
+        self.assertEqual(2, records["products"]["stock"])
+        self.assertEqual(-2, records["inventoryMovements"]["quantity"])
+        self.assertEqual(226, records["sales"]["total"])
+        self.assertEqual([], records["sales"]["payments"])
+        self.assertEqual(f"sale-{quote_id}", records["quotations"]["saleId"])
+
+
+    def test_concurrent_returns_confirm_once_and_retry_recovers_the_result(self) -> None:
+        from quotation_validation import colombian_date
+
+        workspace, email = self.create_workspace("returns@example.test", "Returns")
+        _, first_headers = self.login(workspace, email)
+        _, second_headers = self.login(workspace, email)
+        today = colombian_date()
+
+        def upsert(kind, key, payload, version=0):
+            return {"entityType": kind, "entityId": key, "baseVersion": version,
+                    "action": "upsert", "payload": {"id": key, **payload}}
+
+        seed = self.product_batch("return-seed")
+        product = seed["changes"][0]["payload"]
+        product["stock"] = 2
+        sale = {
+            "id": "sale-1", "number": "V-1", "date": today, "customerId": "c1", "customerName": "Cliente",
+            "lines": [{"productId": "product-1", "productName": "Producto", "quantity": 2,
+                       "unitPrice": 100, "vatRate": 0, "subtotal": 200, "discountShare": 0,
+                       "vatAmount": 0, "total": 200}],
+            "subtotal": 200, "discount": 0, "vatAmount": 0, "total": 200, "payments": [],
+            "invoiceFollowUpStatus": "to_review",
+        }
+        seed["changes"].extend([
+            upsert("contacts", "c1", {"name": "Cliente", "role": "customer"}),
+            upsert("sales", "sale-1", sale),
+            upsert("inventoryMovements", "exit-1", {"productId": "product-1", "quantity": -2,
+                   "balanceAfter": 2, "movementType": "sale", "sourceType": "sale", "sourceId": "sale-1"}),
+        ])
+        seeded = self.client.post("/api/v1/sync/push", headers=first_headers, json=seed)
+        self.assertEqual(200, seeded.status_code, seeded.text)
+        endpoint = "/api/v1/sync/confirm-return"
+
+        def make_batch():
+            return_id = f"return-{uuid.uuid4()}"
+            movement_id = f"stock-{uuid.uuid4()}"
+            updated = deepcopy(sale)
+            updated["returns"] = [{
+                "id": return_id, "date": today, "reason": "Prueba", "paymentCount": 0, "total": 100,
+                "refund": 0, "lines": [{"lineIndex": 0, "quantity": 1, "amount": 100, "restock": True,
+                                       "inventoryMovementId": movement_id}],
+            }]
+            return {"batchId": return_id, "deviceId": "return-test", "changes": [
+                upsert("sales", "sale-1", updated, 1),
+                upsert("products", "product-1", {**product, "stock": 3}, 1),
+                upsert("inventoryMovements", movement_id, {"productId": "product-1", "quantity": 1,
+                       "balanceAfter": 3, "movementType": "adjustment", "sourceType": "sale", "sourceId": "sale-1"}),
+            ]}
+
+        first, second = make_batch(), make_batch()
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            requests = [executor.submit(self.client.post, endpoint, headers=headers, json=batch)
+                        for headers, batch in ((first_headers, first), (second_headers, second))]
+            results = [item.result(timeout=15) for item in requests]
+        self.assertEqual([200, 409], sorted(result.status_code for result in results),
+                         [result.text for result in results])
+        winner = next(index for index, result in enumerate(results) if result.status_code == 200)
+        retry = self.client.post(endpoint, headers=second_headers, json=(first, second)[winner])
+        self.assertEqual(200, retry.status_code, retry.text)
+        self.assertEqual(results[winner].json(), retry.json())
+        pull = self.client.get("/api/v1/sync/pull", headers=second_headers,
+                               params={"cursor": seeded.json()["cursor"]})
+        changes = pull.json()["changes"]
+        self.assertEqual(3, len(changes))
+        records = {item["entityType"]: item["payload"] for item in changes}
+        self.assertEqual(3, records["products"]["stock"])
+        self.assertEqual(1, records["inventoryMovements"]["quantity"])
+        self.assertEqual(1, len(records["sales"]["returns"]))
 
 
 if __name__ == "__main__":

@@ -25,6 +25,7 @@ import type {
   Purchase,
   PurchaseStatus,
   Sale,
+  Quotation,
   ResourceReading,
   EmissionFactor,
   IndicatorId,
@@ -91,6 +92,9 @@ export type ModalState =
   | { type: "product"; product?: Product }
   | { type: "recipe"; recipe?: Recipe; version?: RecipeVersion; productId?: string }
   | { type: "sale" }
+  | { type: "sale-return"; sale: Sale; returnId: string }
+  | { type: "quotation"; source?: Quotation }
+  | { type: "convert-quotation"; quotation: Quotation }
   | {
       type: "purchase";
       purchase?: Purchase;

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { productionCostSummary } from "../../domain/production-cost";
 import type { Product, ProductionOrder, Recipe, RecipeVersion } from "../../domain/types";
 import {
   EmptyState,
@@ -24,6 +25,49 @@ function unitCost(order: ProductionOrder): string {
     order.status === "completed" ? order.materialCostPerGoodUnit : order.estimatedMaterialCost;
   if (value === null || value === undefined) return "Sin dato";
   return order.status === "completed" ? `${formatMoney(value)} por unidad` : formatMoney(value);
+}
+
+function ClosedOrderCost({ order }: { order: ProductionOrder }) {
+  if (
+    order.status !== "completed" ||
+    (!order.consumedMaterials.some((item) => item.actualQuantity !== undefined) &&
+      [order.laborHours, order.laborHourlyRate, order.energyCost, order.overheadCost].every(
+        (value) => value === undefined,
+      ))
+  )
+    return unitCost(order);
+
+  const cost = productionCostSummary(order);
+  const money = (amount: number | null | undefined) =>
+    amount == null ? "Sin dato" : formatMoney(amount);
+  return (
+    <div>
+      <strong>
+        {cost.unitCost != null
+          ? `${formatMoney(cost.unitCost)} por unidad buena`
+          : cost.total != null
+            ? `${formatMoney(cost.total)} en total`
+            : "Costo incompleto"}
+      </strong>
+      <details>
+        <summary>Ver desglose</summary>
+        <dl className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1">
+          <dt>Materiales previstos</dt>
+          <dd>{money(order.estimatedMaterialCost)}</dd>
+          <dt>Materiales usados</dt>
+          <dd>{money(cost.actualMaterialCost)}</dd>
+          <dt>Mano de obra</dt>
+          <dd>{money(cost.laborCost)}</dd>
+          <dt>Energía asignada</dt>
+          <dd>{money(order.energyCost)}</dd>
+          <dt>Otros costos</dt>
+          <dd>{money(order.overheadCost)}</dd>
+          <dt className="font-bold">Total de la orden</dt>
+          <dd className="font-bold">{money(cost.total)}</dd>
+        </dl>
+      </details>
+    </div>
+  );
 }
 
 /** Producción: primero lo que está en proceso, después lo terminado y las recetas. */
@@ -172,11 +216,11 @@ export function ProductionPage({
                   <span>Producto</span>
                   <span>Hechas</span>
                   <span>Perdidas</span>
-                  <span>Costo de materiales</span>
+                  <span>Costo</span>
                 </li>
                 {history.map((order) => (
                   <li key={order.id}>
-                    <div className="records-main">
+                    <div className="records-main self-start">
                       <strong>{order.productName}</strong>
                       <span>
                         {order.number} · {formatDate(order.date)}
@@ -185,11 +229,15 @@ export function ProductionPage({
                           : ""}
                       </span>
                     </div>
-                    <div data-label="Hechas">
+                    <div className="self-start" data-label="Hechas">
                       {formatNumber(Math.max(0, order.quantity - order.wasteQuantity))}
                     </div>
-                    <div data-label="Perdidas">{formatNumber(order.wasteQuantity)}</div>
-                    <div data-label="Costo de materiales">{unitCost(order)}</div>
+                    <div className="self-start" data-label="Perdidas">
+                      {formatNumber(order.wasteQuantity)}
+                    </div>
+                    <div className="self-start" data-label="Costo">
+                      <ClosedOrderCost order={order} />
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -201,7 +249,8 @@ export function ProductionPage({
               </EmptyState>
             )}
             <p className="screen-note">
-              El costo incluye solo los materiales, no la mano de obra ni la energía.
+              Las órdenes anteriores muestran el costo de materiales. En los cierres nuevos, el
+              costo total aparece cuando se conocen materiales, mano de obra, energía y otros costos.
             </p>
           </section>
         </>

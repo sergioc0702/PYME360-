@@ -30,6 +30,14 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from psycopg.rows import dict_row
 from validation import BusinessValidationError, validate_business_records
+from quotation_validation import (
+    colombian_date,
+    quotation_error,
+    quotation_state_error,
+    quoted_quantities,
+    valid_quotation_id,
+)
+from sale_returns import return_additions, return_batch_error, sale_returns_error, valid_return_id
 
 APP_ROOT = Path(__file__).resolve().parent
 SCHEMA_PATH = APP_ROOT / "schema.sql"
@@ -40,7 +48,7 @@ MAX_BATCH_CHANGES = 5_000
 MAX_SYNC_CURSOR = 2**63 - 1
 ROLES = {"admin", "operator", "viewer"}
 SYNC_ENTITY_TYPES = {
-    "contacts", "products", "recipes", "sales", "purchases", "productionOrders",
+    "contacts", "products", "recipes", "sales", "quotations", "purchases", "productionOrders",
     "environmentalRecords", "resourceReadings", "emissionFactors", "indicatorTargets",
     "environmentalActions", "receiptImports", "inventoryMovements", "financialAccounts",
     "cashMovements", "importExtras", "electronicDocuments", "supplierInvoices",
@@ -291,7 +299,10 @@ def contains_sensitive_key(value: Any) -> bool:
     return False
 
 
-def validated_workspace_snapshot(connection: Any, workspace_id: str, changes: list[dict]) -> dict[tuple[str, str], dict]:
+def validated_workspace_snapshot(
+    connection: Any, workspace_id: str, changes: list[dict], *,
+    quotation_conversion: bool = False, seed_quotations: bool = False, return_id: str | None = None,
+) -> dict[tuple[str, str], dict]:
     stored = connection.execute(
         "SELECT entity_type, entity_id, action, payload_json FROM entity_records WHERE workspace_id=%s",
         (workspace_id,),
@@ -302,6 +313,15 @@ def validated_workspace_snapshot(connection: Any, workspace_id: str, changes: li
         }
         for row in stored
     }
+    old_quotes = {
+        entity_id: value["payload"] for (kind, entity_id), value in snapshot.items()
+        if kind == "quotations" and value["action"] == "upsert"
+    }
+    old_sales = {entity_id: value["payload"] for (kind, entity_id), value in snapshot.items()
+                 if kind == "sales" and value["action"] == "upsert"}
+    old_products = {entity_id: value["payload"] for (kind, entity_id), value in snapshot.items()
+                    if kind == "products" and value["action"] == "upsert"} if return_id else {}
+    initial_seed = seed_quotations and not snapshot
     for change in changes:
         key = (str(change["entityType"]), str(change["entityId"]))
         snapshot[key] = {"action": change["action"], "payload": change.get("payload")}
@@ -319,6 +339,33 @@ def validated_workspace_snapshot(connection: Any, workspace_id: str, changes: li
 
     products = records.get("products", {})
     contacts = records.get("contacts", {})
+    quotes = records.get("quotations", {})
+    sales = records.get("sales", {})
+    returns_issue = sale_returns_error(
+        old_sales, sales, records.get("inventoryMovements", {}), records.get("cashMovements", {}),
+        {item.get("saleId") for item in records.get("electronicDocuments", {}).values()
+         if isinstance(item.get("saleId"), str)},
+    )
+    if returns_issue:
+        raise HTTPException(400, returns_issue)
+    if return_id:
+        returns_issue = return_batch_error(
+            old_sales, sales, old_products, records.get("financialAccounts", {}), changes, return_id,
+        )
+        if returns_issue:
+            raise HTTPException(400, returns_issue)
+    elif not initial_seed and return_additions(old_sales, sales):
+        raise HTTPException(400, "Confirma la devolución con la central antes de registrarla en este puesto.")
+    quotation_issue = quotation_state_error(
+        old_quotes, quotes, sales, conversion_allowed=quotation_conversion, restoring=initial_seed,
+    )
+    if quotation_issue:
+        raise HTTPException(400, quotation_issue)
+    if not (quotation_conversion or initial_seed) and any(
+        sale.get("quotationId") and sale_id not in old_sales
+        for sale_id, sale in sales.items()
+    ):
+        raise HTTPException(400, "Confirma la venta desde la acción de convertir cotización.")
     for product_id, product in products.items():
         try:
             stock = float(product.get("stock", 0))
@@ -846,6 +893,19 @@ def revoke_member_sessions(member_id: str, request: Request) -> dict:
 
 @app.post("/api/v1/sync/push")
 def sync_push(batch: SyncBatch, request: Request) -> dict:
+    if valid_return_id(batch.batchId):
+        raise HTTPException(400, "Usa la confirmación de devoluciones para este lote.")
+    return _push_batch(batch, request)
+
+
+@app.post("/api/v1/sync/confirm-return")
+def confirm_sale_return(batch: SyncBatch, request: Request) -> dict:
+    if not valid_return_id(batch.batchId):
+        raise HTTPException(400, "El identificador de la devolución no es válido.")
+    return _push_batch(batch, request, return_id=batch.batchId)
+
+
+def _push_batch(batch: SyncBatch, request: Request, *, return_id: str | None = None) -> dict:
     actor = get_current_actor(request)
     require_role(actor, "admin", "operator")
     check_batch_shape(batch, actor["role"])
@@ -868,6 +928,8 @@ def sync_push(batch: SyncBatch, request: Request) -> dict:
             version = int(current["version"]) if current else 0
             current_versions[(change.entityType, change.entityId)] = version
             if change.baseVersion != version:
+                if return_id:
+                    raise HTTPException(409, "La venta o el inventario cambiaron. Sincroniza y revisa la devolución.")
                 conflict_id = str(uuid.uuid4())
                 remote_change = {
                     "entityType": change.entityType,
@@ -918,6 +980,8 @@ def sync_push(batch: SyncBatch, request: Request) -> dict:
             connection,
             workspace_id,
             [change.model_dump() for change in batch.changes],
+            seed_quotations=actor["role"] == "admin",
+            return_id=return_id,
         )
         versions: list[dict] = []
         cursor_value = 0
@@ -935,6 +999,83 @@ def sync_push(batch: SyncBatch, request: Request) -> dict:
         )
         audit(connection, actor, workspace_id, "sync_accepted", "batch", batch.batchId, {"records": len(batch.changes), "deviceId": batch.deviceId})
     return response
+
+
+@app.post("/api/v1/quotations/{quotation_id}/convert")
+def convert_quotation(quotation_id: str, request: Request) -> dict:
+    actor = get_current_actor(request)
+    require_role(actor, "admin", "operator")
+    if not valid_quotation_id(quotation_id):
+        raise HTTPException(404, "No se encontró la cotización.")
+    workspace_id = str(actor["workspace_id"])
+    with database() as connection:
+        connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (workspace_id,))
+        record = entity_row(connection, workspace_id, "quotations", quotation_id)
+        if not record or record["action"] != "upsert":
+            raise HTTPException(404, "Sincroniza la cotización antes de convertirla.")
+        quote = record["payload_json"]
+        issue = quotation_error(quote)
+        if issue:
+            raise HTTPException(400, issue)
+        if quote.get("saleId"):
+            return {"saleId": quote["saleId"]}
+        today = colombian_date()
+        if not quote["date"] <= today <= quote["validUntil"]:
+            raise HTTPException(409, "La cotización está fuera de vigencia. Duplica la oferta para renovarla.")
+        contact = entity_row(connection, workspace_id, "contacts", quote["customerId"])
+        if not contact or contact["action"] != "upsert" or contact["payload_json"].get("role") == "supplier":
+            raise HTTPException(409, f"El cliente {quote['customerName']} ya no está disponible para ventas.")
+        sale_id = f"sale-{quotation_id}"
+        if entity_row(connection, workspace_id, "sales", sale_id):
+            raise HTTPException(409, "Ya existe un registro de venta para esta cotización.")
+
+        def change(kind: str, payload: dict, version: int = 1) -> tuple[dict, int]:
+            return {"entityType": kind, "entityId": payload["id"], "action": "upsert", "payload": payload}, version
+
+        changes = []
+        for product_id, quantity in quoted_quantities(quote).items():
+            product_row = entity_row(connection, workspace_id, "products", product_id)
+            line = next(item for item in quote["lines"] if item["productId"] == product_id)
+            if not product_row or product_row["action"] != "upsert" or product_row["payload_json"].get("type") != "finished":
+                raise HTTPException(409, f"El producto {line['productName']} ya no está disponible para ventas.")
+            product = product_row["payload_json"]
+            stock = float(product["stock"])
+            if stock < quantity:
+                raise HTTPException(409, f"No hay suficientes existencias de {product['name']}.")
+            balance = round(stock - quantity, 4)
+            changes.append(change("products", {**product, "stock": balance}, product_row["version"] + 1))
+            changes.append(change("inventoryMovements", {
+                "id": f"movement-{uuid.uuid4()}", "productId": product_id,
+                "productName": product["name"], "sku": product.get("sku", ""), "unit": product.get("unit", ""),
+                "quantity": -quantity, "balanceAfter": balance, "movementType": "sale",
+                "reason": "Salida por venta", "sourceType": "sale", "sourceId": sale_id,
+                "occurredAt": f"{today}T12:00:00.000Z", "createdAt": utc_now().isoformat(),
+            }))
+        numbers = [
+            row["number"] for row in connection.execute(
+                """SELECT payload_json->>'number' AS number FROM entity_records
+                   WHERE workspace_id=%s AND entity_type='sales' AND action='upsert'""",
+                (workspace_id,),
+            )
+        ]
+        next_number = max([len(numbers), *(int(n[2:]) for n in numbers if n and re.fullmatch(r"V-[0-9]{1,15}", n))]) + 1
+        sale = {
+            **{key: quote[key] for key in ("customerId", "customerName", "lines", "subtotal", "discount", "vatAmount", "total")},
+            "id": sale_id, "quotationId": quotation_id, "number": f"V-{next_number:04d}", "date": today,
+            "payments": [], "invoiceFollowUpStatus": "to_review", "externalInvoiceNumber": "", "externalInvoiceDate": "",
+        }
+        changes.extend((
+            change("sales", sale),
+            change("quotations", {**quote, "saleId": sale_id}, record["version"] + 1),
+        ))
+        validated_workspace_snapshot(
+            connection, workspace_id, [item for item, _ in changes], quotation_conversion=True,
+        )
+        batch_id = f"quote-conversion-{uuid.uuid4()}"
+        for item, version in changes:
+            append_change(connection, workspace_id, batch_id, item, version)
+        audit(connection, actor, workspace_id, "quotation_converted", "quotations", quotation_id, {"saleId": sale_id})
+    return {"saleId": sale_id}
 
 
 @app.get("/api/v1/sync/pull")

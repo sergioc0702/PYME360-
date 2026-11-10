@@ -37,6 +37,7 @@ const ENTITY_LABELS: Record<string, string> = {
   recipes: "Receta",
   resourceReadings: "Consumo",
   sales: "Venta",
+  quotations: "Cotización",
   session: "Sesión",
   supplierInvoices: "Factura de proveedor",
   sync_conflict: "Conflicto de sincronización",

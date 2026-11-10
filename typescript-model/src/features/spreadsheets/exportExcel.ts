@@ -9,6 +9,7 @@ import type {
   ReceiptImport,
 } from "../../domain/types";
 import { calculateMonthlyEnvironmentalMetrics } from "../../domain/environmental";
+import { netSalePaid, netSaleTotal, outstandingBalance } from "../../domain/business";
 
 const EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const DATE_FORMAT = "dd/mm/yyyy";
@@ -247,6 +248,7 @@ function addProductsAndRecipesSheets(workbook: ExcelJS.Workbook, state: AppState
 function addSalesSheets(workbook: ExcelJS.Workbook, state: AppState): void {
   const saleLines: SheetRow[] = [];
   const payments: SheetRow[] = [];
+  const returns: SheetRow[] = [];
   const saleRows = state.sales.map((sale) => {
     const paid = sale.payments.reduce((sum, payment) => sum + payment.amount, 0);
     for (const line of sale.lines) {
@@ -283,6 +285,25 @@ function addSalesSheets(workbook: ExcelJS.Workbook, state: AppState): void {
         cashMovementId: payment.cashMovementId ?? "",
       });
     }
+    for (const record of sale.returns ?? []) {
+      for (const [lineNumber, line] of record.lines.entries()) {
+        returns.push({
+          returnId: record.id,
+          saleNumber: sale.number,
+          customer: sale.customerName,
+          date: excelDate(record.date),
+          reason: record.reason,
+          product: sale.lines[line.lineIndex]?.productName ?? "",
+          quantity: line.quantity,
+          amount: line.amount,
+          restock: line.restock ? "Sí" : "No",
+          refund: lineNumber === 0 ? record.refund : 0,
+          accountId: state.cashMovements.find((item) => item.id === record.cashMovementId)?.accountId ?? "",
+          inventoryMovementId: line.inventoryMovementId ?? "",
+          cashMovementId: record.cashMovementId ?? "",
+        });
+      }
+    }
     return {
       id: sale.id,
       number: sale.number,
@@ -294,7 +315,9 @@ function addSalesSheets(workbook: ExcelJS.Workbook, state: AppState): void {
       vat: sale.vatAmount,
       total: sale.total,
       paid,
-      balance: Math.max(0, sale.total - paid),
+      returned: sale.total - netSaleTotal(sale),
+      refunded: paid - netSalePaid(sale),
+      balance: outstandingBalance(sale, state.electronicDocuments),
       invoiceFollowUpStatus: sale.invoiceFollowUpStatus,
       externalInvoiceNumber: sale.externalInvoiceNumber,
       externalInvoiceDate: excelDate(sale.externalInvoiceDate),
@@ -315,6 +338,8 @@ function addSalesSheets(workbook: ExcelJS.Workbook, state: AppState): void {
       { header: "IVA (COP)", key: "vat", width: 16, numberFormat: MONEY_FORMAT },
       { header: "Total (COP)", key: "total", width: 18, numberFormat: MONEY_FORMAT },
       { header: "Pagado (COP)", key: "paid", width: 18, numberFormat: MONEY_FORMAT },
+      { header: "Devuelto (COP)", key: "returned", width: 18, numberFormat: MONEY_FORMAT },
+      { header: "Reembolsado (COP)", key: "refunded", width: 18, numberFormat: MONEY_FORMAT },
       { header: "Saldo (COP)", key: "balance", width: 18, numberFormat: MONEY_FORMAT },
       { header: "Seguimiento factura", key: "invoiceFollowUpStatus", width: 24 },
       { header: "Número factura externa", key: "externalInvoiceNumber", width: 24 },
@@ -328,6 +353,21 @@ function addSalesSheets(workbook: ExcelJS.Workbook, state: AppState): void {
     ],
     saleRows,
   );
+  addSheet(workbook, "Devoluciones", [
+    { header: "ID devolución", key: "returnId", width: 48 },
+    { header: "Venta", key: "saleNumber", width: 18 },
+    { header: "Cliente", key: "customer", width: 30 },
+    { header: "Fecha", key: "date", width: 14, numberFormat: DATE_FORMAT },
+    { header: "Motivo", key: "reason", width: 36 },
+    { header: "Producto", key: "product", width: 30 },
+    { header: "Cantidad", key: "quantity", width: 14, numberFormat: QUANTITY_FORMAT },
+    { header: "Valor (COP)", key: "amount", width: 18, numberFormat: MONEY_FORMAT },
+    { header: "Reintegrado", key: "restock", width: 15 },
+    { header: "Reembolso por devolución (COP)", key: "refund", width: 29, numberFormat: MONEY_FORMAT },
+    { header: "Cuenta del reembolso", key: "accountId", width: 29 },
+    { header: "ID movimiento inventario", key: "inventoryMovementId", width: 48 },
+    { header: "ID movimiento caja", key: "cashMovementId", width: 48 },
+  ], returns);
   addSheet(
     workbook,
     "Detalle ventas",
@@ -628,16 +668,15 @@ function addInventoryAndFinanceSheets(workbook: ExcelJS.Workbook, state: AppStat
       { header: "Saldo (COP)", key: "balance", width: 18, numberFormat: MONEY_FORMAT },
     ],
     state.sales.map((sale) => {
-      const paid = sale.payments.reduce((sum, payment) => sum + payment.amount, 0);
       return {
         id: sale.id,
         number: sale.number,
         customer: sale.customerName,
         date: excelDate(sale.date),
         dueDate: excelDate(sale.dueDate ?? ""),
-        total: sale.total,
-        paid,
-        balance: Math.max(0, sale.total - paid),
+        total: netSaleTotal(sale),
+        paid: netSalePaid(sale),
+        balance: outstandingBalance(sale, state.electronicDocuments),
       };
     }),
   );
@@ -690,6 +729,7 @@ function addProductionSheets(workbook: ExcelJS.Workbook, state: AppState): void 
         sku: material.sku,
         materialName: material.productName,
         quantity: material.quantity,
+        actualQuantity: material.actualQuantity ?? "",
         environmentalUnit: material.environmentalUnit ?? "",
         environmentalConversionFactor: material.environmentalConversionFactor ?? "",
         materialProductId: material.productId,
@@ -707,6 +747,10 @@ function addProductionSheets(workbook: ExcelJS.Workbook, state: AppState): void 
       wasteQuantity: order.wasteQuantity,
       estimatedMaterialCost: order.estimatedMaterialCost ?? "",
       materialCostPerGoodUnit: order.materialCostPerGoodUnit ?? "",
+      laborHours: order.laborHours ?? "",
+      laborHourlyRate: order.laborHourlyRate ?? "",
+      energyCost: order.energyCost ?? "",
+      overheadCost: order.overheadCost ?? "",
       recipeVersionId: order.recipeVersionId ?? "",
       recipeVersionNumber: order.recipeVersionNumber ?? "",
       expectedYieldPercent: order.expectedYieldPercent ?? "",
@@ -728,6 +772,10 @@ function addProductionSheets(workbook: ExcelJS.Workbook, state: AppState): void 
       { header: "Desperdicio", key: "wasteQuantity", width: 16, numberFormat: QUANTITY_FORMAT },
       { header: "Costo estimado materiales COP", key: "estimatedMaterialCost", width: 26, numberFormat: MONEY_FORMAT },
       { header: "Costo materiales por unidad buena COP", key: "materialCostPerGoodUnit", width: 34, numberFormat: MONEY_FORMAT },
+      { header: "Horas trabajadas", key: "laborHours", width: 18, numberFormat: "0.00" },
+      { header: "Costo por hora COP", key: "laborHourlyRate", width: 20, numberFormat: MONEY_FORMAT },
+      { header: "Energía asignada COP", key: "energyCost", width: 22, numberFormat: MONEY_FORMAT },
+      { header: "Otros costos de la orden COP", key: "overheadCost", width: 28, numberFormat: MONEY_FORMAT },
       { header: "ID versión de receta", key: "recipeVersionId", width: 30 },
       { header: "Número de versión de receta", key: "recipeVersionNumber", width: 26, numberFormat: "0" },
       { header: "Rendimiento esperado (%)", key: "expectedYieldPercent", width: 24, numberFormat: "0.00" },
@@ -749,6 +797,7 @@ function addProductionSheets(workbook: ExcelJS.Workbook, state: AppState): void 
       { header: "ID material", key: "materialProductId", width: 28 },
       { header: "Material", key: "materialName", width: 30 },
       { header: "Cantidad consumida", key: "quantity", width: 22, numberFormat: QUANTITY_FORMAT },
+      { header: "Cantidad real consumida", key: "actualQuantity", width: 24, numberFormat: QUANTITY_FORMAT },
       { header: "Unidad ambiental", key: "environmentalUnit", width: 20 },
       {
         header: "Conversión ambiental",

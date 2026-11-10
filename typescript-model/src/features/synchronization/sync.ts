@@ -92,6 +92,10 @@ export function synchronizeNow(): Promise<CloudSyncStatus & { pushedBatches: num
   return requestJson("/api/v1/sync/run", "POST", {});
 }
 
+export function confirmCentralQuotation(quotationId: string, expectedRevision: number): Promise<{ saleId: string }> {
+  return requestJson("/api/v1/sync/convert-quotation", "POST", { quotationId, expectedRevision });
+}
+
 export function rebuildAndRetryRejectedBatch(): Promise<CloudSyncStatus & {
   rebuiltBatchId: string;
   rebuiltChanges: number;

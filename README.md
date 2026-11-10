@@ -14,7 +14,7 @@ En macOS usa `Abrir Pyme360.command` y en Linux `Abrir-Pyme360.sh`.
 
 Inicia siempre Pyme360 con el lanzador: la base SQLite solo está disponible a través del servidor local. La selección del recibo se hace desde el navegador; el archivo se procesa localmente y no se conserva.
 
-En modo local, los datos permanecen en este equipo. La sincronización central es opcional y requiere infraestructura propia; no hace falta para instalar o usar el ERP local.
+La edición activa guarda los datos en SQLite en este equipo. Google Drive puede recibir copias cifradas de recuperación. No hace falta PostgreSQL para instalar ni usar Pyme360.
 
 ## Repositorio y publicación en GitHub
 
@@ -27,9 +27,9 @@ cd PYME360-
 
 El repositorio incluye la interfaz React, el servidor local, las pruebas, y la documentación. Conserva `typescript-model/public/vendor/receipt-reader`: contiene las librerías locales que necesita la lectura de recibos. `.gitignore` excluye SQLite, `.env`, respaldos, dependencias, ejecutables generados y artefactos de compilación. No fuerces esos archivos con `git add -f`.
 
-Este es un proyecto local, no un servicio web alojado. **Subirlo a GitHub no permite que varios usuarios compartan automáticamente la misma base de datos.** GitHub Pages solo publica archivos estáticos y no ejecuta `server/serve-local.py`; para cuentas y sincronización entre equipos hay que desplegar la API central, PostgreSQL, correo, HTTPS y copias de seguridad descritos en [server/cloud/README.md](server/cloud/README.md).
+Este es un proyecto local, no un servicio web alojado. **Subirlo a GitHub no permite que varios usuarios compartan automáticamente la misma base de datos.** Google Drive conserva respaldos cifrados; no funciona como base de datos multiusuario.
 
-No subas a GitHub datos reales de clientes, proveedores, facturas o usuarios. Pyme360 conserva el modo de operación local en SQLite. La interfaz React también incorpora una API central opcional para espacios de empresa y sincronización; requiere configurar PostgreSQL, correo saliente, TLS y alojamiento antes de compartir datos entre equipos. Consulta [typescript-model/README.md](typescript-model/README.md) y [server/cloud/README.md](server/cloud/README.md) para sus límites y puesta en marcha.
+No subas a GitHub datos reales de clientes, proveedores, facturas o usuarios. La edición activa conserva los datos en SQLite. El prototipo de sincronización central permanece en el repositorio como trabajo de desarrollo, pero está desactivado en la interfaz y no forma parte de esta instalación.
 
 ## Flujos disponibles
 
@@ -72,15 +72,11 @@ No subas a GitHub datos reales de clientes, proveedores, facturas o usuarios. Py
 
 El servidor sirve la compilación de `typescript-model/dist/` y mantiene la API local y los datos SQLite externos al repositorio.
 
-## Alcance y sincronización
+## Alcance del almacenamiento
 
-El modo local usa SQLite y un servidor accesible únicamente desde el mismo computador. El servidor mantiene copias diarias locales; al vincular por primera vez la interfaz React con una empresa central, crea además una copia SQLite previa a la nube.
+La aplicación usa SQLite y un servidor accesible únicamente desde el mismo computador. El servidor mantiene copias diarias locales y puede enviar respaldos cifrados a Google Drive. Una instalación recuperada desde Drive requiere restaurar el archivo; no hay edición simultánea desde varios equipos.
 
-El proyecto incluye un servicio central opcional en `server/cloud/`, implementado con FastAPI y PostgreSQL. Puede probarse localmente con Docker Compose; ese entorno no constituye un despliegue compartido seguro. Para sincronizar computadores a través de Internet se requiere una instancia PostgreSQL protegida, un dominio HTTPS, un servicio de correo SMTP verificado y copias centrales comprobables. Pyme360 no incluye alojamiento ni crea esos recursos automáticamente.
-
-La cuenta central de nube y el inicio de sesión local son credenciales separadas en esta transición. El administrador se registra y verifica el correo en **Administración → Nube y sincronización**, y luego invita al equipo allí. Para permitir que una persona trabaje sin Internet, el administrador también crea su cuenta local en **Usuarios** con el mismo rol; cada usuario se conecta con su cuenta central en el equipo que vaya a sincronizar. No reutilices contraseñas en ambos registros. Las invitaciones y roles centrales regulan la sincronización; los roles locales continúan regulando el uso offline. El panel muestra la validación de los datos locales y centrales, lotes pendientes y conflictos.
-
-La sincronización está integrada en la interfaz React/TypeScript. La emisión electrónica se delega a un proveedor tecnológico certificado mediante el adaptador configurable de `server/electronic_invoicing.py`; Pyme360 no firma ni valida por sí mismo ante la DIAN, y la contabilidad formal de partida doble queda fuera de esta versión. Pyme360 puede preparar borradores tributarios e importar XML de proveedores para revisión. Las referencias ambientales incluyen ONU ODS y contexto del sistema eléctrico de XM, más archivos revisados manualmente DANE/SUI/EIA; no son telemetría de la planta.
+El prototipo de API central de `server/cloud/` sigue disponible para desarrollo, pero la edición activa no lo usa. La emisión electrónica se delega a un proveedor tecnológico certificado mediante el adaptador configurable de `server/electronic_invoicing.py`; Pyme360 no firma ni valida por sí mismo ante la DIAN, y la contabilidad formal de partida doble queda fuera de esta versión. Pyme360 puede preparar borradores tributarios e importar XML de proveedores para revisión. Las referencias ambientales incluyen ONU ODS y contexto del sistema eléctrico de XM, más archivos revisados manualmente DANE/SUI/EIA; no son telemetría de la planta.
 
 La extracción de recibos es una ayuda que puede equivocarse y requiere confirmación humana. Los datos de la opción de ejemplo son ficticios. El indicador ODS 7.3.1 muestra datos públicos anuales de intensidad energética de la economía por PIB, para el mundo y Colombia cuando estén disponibles. Es contexto agregado, no un consumo objetivo por producto o empresa. La demo permite definir metas propias de reducción de energía y agua por unidad producida, calculadas a partir de tres períodos anteriores registrados; no son mínimos universales. La precisión del OCR aún debe medirse con recibos anonimizados de distintos proveedores.
 
@@ -88,7 +84,7 @@ La demo tampoco se conecta en tiempo real a medidores o cuentas de energía y ag
 
 La guía de las referencias externas, sus limitaciones, los archivos oficiales versionados y las pruebas locales está en [typescript-model/README.md](typescript-model/README.md) y [server/benchmark-data/README.md](server/benchmark-data/README.md).
 
-La API central actual se ejecuta con FastAPI y PostgreSQL, detrás de un proxy HTTPS configurado por quien despliegue el servicio. El proveedor de infraestructura puede elegirse sin cambiar las reglas de negocio. La facturación DIAN requiere un proveedor tecnológico autorizado: Pyme360 incluye el adaptador HTTP y su configuración local, pero no sustituye la certificación, la firma ni la aceptación del proveedor.
+La facturación DIAN requiere un proveedor tecnológico autorizado: Pyme360 incluye el adaptador HTTP y su configuración local, pero no sustituye la certificación, la firma ni la aceptación del proveedor.
 
 ## Datos locales y reinicio
 

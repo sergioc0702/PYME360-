@@ -227,6 +227,10 @@ def validate_business_records(records: dict[str, dict[str, dict]]) -> None:
         for key, label in (
             ("estimatedMaterialCost", "Costo estimado de materiales"),
             ("materialCostPerGoodUnit", "Costo de materiales por unidad buena"),
+            ("laborHours", "Horas trabajadas"),
+            ("laborHourlyRate", "Costo por hora"),
+            ("energyCost", "Energía asignada"),
+            ("overheadCost", "Otros costos de producción"),
         ):
             if key in order and order[key] is not None:
                 _number(order, key, label, minimum=0)
@@ -237,6 +241,7 @@ def validate_business_records(records: dict[str, dict[str, dict]]) -> None:
             for key, label in (
                 ("unitCostSnapshot", "Costo unitario registrado del material"),
                 ("lineCostSnapshot", "Costo registrado del material consumido"),
+                ("actualQuantity", "Cantidad real consumida"),
             ):
                 if key in material and material[key] is not None:
                     _number(material, key, label, minimum=0)

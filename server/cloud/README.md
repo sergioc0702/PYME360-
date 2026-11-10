@@ -6,6 +6,19 @@ La facturación electrónica y el conector hacia un proveedor tecnológico se ej
 
 ## Ejecutar en desarrollo
 
+### Sin Docker y sin servicios de pago
+
+Para ensayar la sincronización en **este mismo computador**, instala PostgreSQL y las dependencias Python de desarrollo:
+
+```powershell
+py -m pip install -r server/cloud/requirements-test.txt
+py server/cloud/run_local_dev.py --postgres-bin "C:/ruta/a/PostgreSQL/bin"
+```
+
+El lanzador crea una base de ensayo en `outputs/postgres-local` (ignorada por Git), inicia PostgreSQL solo en `127.0.0.1` y publica la API en `http://127.0.0.1:8000`. Cierra el proceso con Ctrl+C para detener ambos. No solicita tarjeta, crea cuentas en proveedores ni conecta un alojamiento externo. Comprueba `http://127.0.0.1:8000/health`; después puedes registrar una empresa ficticia y conectar un puesto local desde **Administración → Nube y sincronización** usando esa URL. Un segundo puesto en el mismo computador puede apuntar a la misma API y probar conflictos y sincronización.
+
+Esta modalidad sirve para desarrollo y datos ficticios. Para compartir datos reales entre computadores por Internet todavía hacen falta alojamiento, HTTPS, correo y copias de PostgreSQL; esos servicios se eligen y presupuestan aparte.
+
 Requisitos: Docker Desktop con Docker Compose. En esta carpeta:
 
 ```sh

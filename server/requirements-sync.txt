@@ -1,3 +1,6 @@
-# Optional dependency. Needed only when this desktop is linked to a cloud workspace.
-# Stores bearer tokens through the operating system credential manager.
+# Optional dependencies for encrypted backups in Google Drive or a synced folder.
+# Credentials are stored by the operating system; PostgreSQL is not required.
 keyring>=25.6,<27
+cryptography>=44,<47
+google-auth-oauthlib>=1.2,<2
+google-api-python-client>=2.160,<3

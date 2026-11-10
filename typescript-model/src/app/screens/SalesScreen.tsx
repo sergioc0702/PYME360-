@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { outstandingBalance } from "../../domain/business";
+import { netSalePaid, netSaleTotal, outstandingBalance } from "../../domain/business";
 import type { ElectronicDocument, InvoiceFollowUpStatus, Sale } from "../../domain/types";
 import {
   EmptyState,
@@ -64,21 +64,27 @@ export function SalesPage({
   section,
   onSectionChange,
   documents,
+  quotations,
+  onAddQuotation,
   onAdd,
   onPrepareInvoice,
   onPayment,
+  onReturn,
   onDelete,
   canEdit,
   canDelete = false,
 }: {
   sales: Sale[];
   electronicDocuments: ElectronicDocument[];
-  section: "sales" | "documents";
-  onSectionChange: (section: "sales" | "documents") => void;
+  section: "sales" | "documents" | "quotations";
+  onSectionChange: (section: "sales" | "documents" | "quotations") => void;
   documents: ReactNode;
+  quotations: ReactNode;
+  onAddQuotation: () => void;
   onAdd: () => void;
   onPrepareInvoice: (sale: Sale) => void;
   onPayment: (sale: Sale) => void;
+  onReturn: (sale: Sale) => void;
   onDelete: (sale: Sale) => void;
   canEdit: boolean;
   canDelete?: boolean;
@@ -90,8 +96,15 @@ export function SalesPage({
   const month = currentMonth();
   const soldThisMonth = sales
     .filter((sale) => sale.date.startsWith(month))
-    .reduce((sum, sale) => sum + sale.total, 0);
+    .reduce((sum, sale) => sum + sale.total, 0)
+    - sales.reduce((sum, sale) => sum + (sale.returns ?? [])
+      .filter((item) => item.date.startsWith(month))
+      .reduce((value, item) => value + item.total, 0), 0);
   const toCollect = sales.reduce((sum, sale) => sum + balanceOf(sale), 0);
+  const returnRows = sales.flatMap((sale) => (sale.returns ?? [])
+    .map((record) => ({ sale, record }))).sort((a, b) => b.record.date.localeCompare(a.record.date));
+  const returnedTotal = returnRows.reduce((sum, item) => sum + item.record.total, 0);
+  const refundedTotal = returnRows.reduce((sum, item) => sum + item.record.refund, 0);
   const visible = sales
     .filter((sale) => {
       const text = `${sale.number} ${sale.customerName} ${sale.lines
@@ -115,6 +128,13 @@ export function SalesPage({
             </button>
           </div>
         )}
+        {canEdit && section === "quotations" && (
+          <div className="screen-actions">
+            <button className="action-primary" type="button" onClick={onAddQuotation}>
+              Nueva cotización
+            </button>
+          </div>
+        )}
       </header>
       <div className="screen-tabs" role="group" aria-label="Secciones de ventas">
         <button
@@ -123,6 +143,9 @@ export function SalesPage({
           onClick={() => onSectionChange("sales")}
         >
           Ventas
+        </button>
+        <button type="button" aria-pressed={section === "quotations"} onClick={() => onSectionChange("quotations")}>
+          Cotizaciones
         </button>
         <button
           type="button"
@@ -133,7 +156,7 @@ export function SalesPage({
         </button>
       </div>
 
-      {section === "documents" ? (
+      {section === "quotations" ? quotations : section === "documents" ? (
         documents
       ) : (
         <>
@@ -147,6 +170,21 @@ export function SalesPage({
               <dd>{formatMoney(toCollect)}</dd>
             </div>
           </dl>
+          {returnRows.length > 0 && (
+            <details className="card" aria-label="Reporte de devoluciones">
+              <summary>Reporte de devoluciones · {returnRows.length} · {formatMoney(returnedTotal)}</summary>
+              <p>Reembolsado a clientes: {formatMoney(refundedTotal)}</p>
+              <ul className="mt-2 space-y-2">
+                {returnRows.map(({ sale, record }) => (
+                  <li key={record.id}>
+                    {formatDate(record.date)} · {sale.number} · {sale.customerName} · {record.reason}
+                    {" · "}{formatMoney(record.total)}
+                    {record.refund > 0 && <> · Reembolso {formatMoney(record.refund)}</>}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
 
           <section aria-labelledby="ventas-lista">
             <h2 id="ventas-lista">Tus ventas</h2>
@@ -178,7 +216,8 @@ export function SalesPage({
                 </li>
                 {visible.map((sale) => {
                   const balance = balanceOf(sale);
-                  const paid = sale.payments.reduce((sum, payment) => sum + payment.amount, 0);
+                  const paid = netSalePaid(sale);
+                  const returns = sale.returns ?? [];
                   const overdue = balance > 0 && !!sale.dueDate && sale.dueDate < today();
                   const invoice = electronicDocuments.find(
                     (document) => document.saleId === sale.id && document.kind === "invoice",
@@ -197,10 +236,34 @@ export function SalesPage({
                             .join(" · ")}
                         </span>
                         {adjustments && <span className="records-detail">{adjustments}</span>}
+                        {returns.length > 0 && (
+                          <details className="records-detail">
+                            <summary>Devoluciones ({returns.length})</summary>
+                            <ul className="mt-2 space-y-2">
+                              {returns.map((record) => (
+                                <li key={record.id}>
+                                  <p>{formatDate(record.date)} · {record.reason} · {formatMoney(record.total)}</p>
+                                  {record.lines.map((line) => (
+                                    <p key={line.lineIndex}>
+                                      {sale.lines[line.lineIndex].productName} × {formatNumber(line.quantity)}
+                                      {line.restock ? " · Reintegrado" : " · Fuera de inventario"}
+                                    </p>
+                                  ))}
+                                  {record.refund > 0 && <p>Reembolso {formatMoney(record.refund)}</p>}
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
                       </div>
-                      <div data-label="Total">{formatMoney(sale.total)}</div>
+                      <div data-label="Total">
+                        {formatMoney(sale.total)}
+                        {returns.length > 0 && (
+                          <span className="records-detail">Tras devoluciones {formatMoney(netSaleTotal(sale))}</span>
+                        )}
+                      </div>
                       <div data-label="Por cobrar">
-                        {balance > 0 ? <strong>{formatMoney(balance)}</strong> : "Pagada"}
+                        {balance > 0 ? <strong>{formatMoney(balance)}</strong> : returns.length ? "Sin saldo" : "Pagada"}
                         {balance > 0 && paid > 0 && (
                           <span className="records-detail">Abonó {formatMoney(paid)}</span>
                         )}
@@ -236,7 +299,10 @@ export function SalesPage({
                               Abonar
                             </button>
                           )}
-                          {!invoice && (
+                          <button className="action-link" type="button" onClick={() => onReturn(sale)}>
+                            Devolver productos
+                          </button>
+                          {!invoice && !returns.length && (
                             <button
                               className="action-link"
                               type="button"
@@ -245,7 +311,7 @@ export function SalesPage({
                               Preparar factura
                             </button>
                           )}
-                          {canDelete && (
+                          {canDelete && !returns.length && (
                             <button
                               className="action-link is-danger"
                               type="button"

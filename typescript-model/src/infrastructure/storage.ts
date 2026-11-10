@@ -1,6 +1,7 @@
 import { createEmptyState } from "../domain/business";
 import { DEFAULT_EMISSION_FACTORS, migrateLegacyReadings } from "../domain/environmental";
 import type { AppState, Product, Recipe, ReceiptImport, ResourceReading } from "../domain/types";
+import { LocalApiError } from "./local-api-error";
 
 const API_PATH = "/api/v1/typescript-model/state";
 const LEGACY_STORAGE_KEY = "pyme360.typescript-model.v1";
@@ -265,6 +266,9 @@ export function migrateAppState(value: unknown): AppState | null {
     products,
     recipes,
     sales,
+    quotations: hasObjectRows(value.quotations)
+      ? (value.quotations as unknown as AppState["quotations"])
+      : [],
     taxConfiguration: {
       legalAddress: "",
       invoiceEmail: "",
@@ -344,11 +348,7 @@ async function readServerState(): Promise<LoadedState | null> {
   const response = await fetch(API_PATH, { cache: "no-store" });
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const message =
-      isRecord(payload) && typeof payload.error === "string"
-        ? payload.error
-        : "No se pudo leer la base de datos local.";
-    throw new Error(message);
+    throw new LocalApiError(payload, "No se pudo leer la base de datos local.");
   }
   if (!isRecord(payload) || typeof payload.revision !== "number") {
     throw new Error("El servidor devolvió una respuesta de almacenamiento no válida.");
@@ -448,10 +448,14 @@ export async function saveState(
   state: AppState,
   expectedRevision: number,
   restore = false,
+  centralReturnId?: string,
 ): Promise<number> {
   let response: Response;
   try {
-    response = await fetch(restore ? `${API_PATH}?restore=1` : API_PATH, {
+    const path = centralReturnId
+      ? `${API_PATH}?confirmReturn=${encodeURIComponent(centralReturnId)}`
+      : restore ? `${API_PATH}?restore=1` : API_PATH;
+    response = await fetch(path, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ expectedRevision, state }),
@@ -476,11 +480,7 @@ export async function saveState(
     throw new StateConflictError(message, latestState);
   }
   if (!response.ok) {
-    const message =
-      isRecord(payload) && typeof payload.error === "string"
-        ? payload.error
-        : "SQLite no confirmó el guardado.";
-    throw new Error(message);
+    throw new LocalApiError(payload, "No se pudo confirmar el guardado.");
   }
   if (!isRecord(payload) || typeof payload.revision !== "number") {
     throw new Error("El servidor guardó una respuesta incompleta.");

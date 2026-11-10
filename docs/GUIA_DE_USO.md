@@ -93,6 +93,16 @@ La venta descuenta las unidades del inventario y no se guarda si la existencia n
 
 **Una venta guardada no se edita.** Para corregirla, un administrador la elimina y se registra de nuevo. Al eliminarla se devuelven los productos al inventario y se revierten sus movimientos de dinero. Si la venta tiene un borrador de factura sin enviar, un administrador debe eliminarlo primero en **Facturación y documentos** con **Eliminar borrador**. Los documentos ya enviados al proveedor no se eliminan, y en un equipo vinculado a la nube tampoco los borradores.
 
+### Devolver parte de una venta
+
+En **Vender > Ventas**, busca la venta y elige **Devolver productos**. Indica el motivo y la cantidad de cada renglón. Marca **Vuelve al inventario** solo para unidades que se pueden volver a vender.
+
+Revisa el valor y el saldo antes de registrar. La devolución reduce primero lo que el cliente debe. Si queda un excedente, selecciona la caja o el banco desde donde lo reembolsas. La venta original y sus abonos siguen visibles junto con el historial de devoluciones.
+
+En un equipo vinculado, confirma con conexión y con la sincronización al día. Para ventas con factura aceptada, ve a **Vender > Facturas > Crear nota** y prepara una nota crédito. Confirma su aceptación con el proveedor. La nota crédito aceptada ajusta el saldo por cobrar; si recibiste mercancía apta para vender, registra la entrada en **Inventario** y, si reembolsaste dinero, registra la salida en **Dinero**. Estos movimientos manuales todavía no aparecen como una devolución vinculada a la venta. Una factura hecha por fuera requiere el trámite de corrección con el proveedor externo.
+
+En **Datos y respaldo > Descargar Excel**, la hoja **Devoluciones** muestra fecha, venta, cliente, motivo, producto, unidades, valor, reintegro y reembolso. Si una devolución incluye varios productos, el reembolso aparece una sola vez para evitar sumarlo dos veces.
+
 ### Facturación y documentos
 
 La pestaña **Ventas → Facturación y documentos** prepara información tributaria:
@@ -202,11 +212,42 @@ Si un pago o egreso va a dejar una cuenta en negativo, Pyme360 te avisa y pide c
 
 Abre **Datos y respaldo**. Allí encontrarás estas acciones:
 
-1. **Descargar respaldo JSON:** crea una copia completa del estado del negocio.
-2. **Restaurar un respaldo:** un administrador elige un archivo JSON y confirma. Reemplaza los datos actuales; las cuentas de usuario y la auditoría se conservan. Descarga antes una copia si quieres guardar el estado actual.
+1. **Descargar respaldo:** crea un archivo JSON cifrado con los datos del negocio.
+2. **Recuperar un respaldo:** un administrador elige el archivo y confirma el reemplazo de los datos. Las cuentas de usuario y la auditoría del equipo de destino se conservan.
 3. **Descargar archivo Excel (.xlsx):** genera a demanda un libro con hojas separadas por módulo.
 4. **Descargar catálogo de muestra adaptado:** descarga 12 referencias de ejemplo para practicar. Sus valores son ilustrativos.
 5. **Importar archivo Excel (.xlsx o .xls):** abre el asistente de importación. Está disponible para administradores y operadores.
+
+### Guardar una copia fuera del equipo y ensayar la recuperación
+
+#### Conectar Google Drive
+
+Google Drive puede recibir las copias cifradas directamente desde el servidor local. Crea un proyecto de prueba en Google Cloud, habilita **Google Drive API** y crea un cliente OAuth de tipo **Aplicación de escritorio** con permiso para archivos creados por Pyme360 (`drive.file`). Descarga su JSON de cliente y consérvalo fuera de Git. No actives facturación ni contrates un servicio para este ensayo. Luego, desde la raíz del proyecto:
+
+```powershell
+py -m pip install -r server/requirements-sync.txt
+py server/serve-local.py --configure-google-drive "C:/ruta/al/cliente-oauth.json"
+```
+
+El navegador abrirá el consentimiento de Google. El comando pedirá una contraseña de recuperación dos veces; guárdala fuera del computador y de Drive. Pyme360 guarda el permiso renovable y la contraseña en el almacén seguro de Windows, cifra cada copia antes de subirla y confirma el tamaño y la huella que devuelve Drive. En **Datos y respaldo** aparece la última subida confirmada o si el último intento falló. Una copia confirmada se puede descargar de Drive y abrir con **Recuperar un respaldo**. Los datos activos permanecen en SQLite; Drive solo recibe copias de recuperación y no sincroniza dos equipos.
+
+Si tienes una carpeta sincronizada con la nube, puedes activar copias cifradas automáticas desde una terminal:
+
+```powershell
+py -m pip install -r server/requirements-sync.txt
+py server/serve-local.py --configure-offsite-backup "$env:OneDrive/Pyme360"
+```
+
+Crea primero esa carpeta en OneDrive. El programa pedirá una contraseña de recuperación dos veces; guárdala en un lugar distinto del computador y de OneDrive. La contraseña se guarda para las siguientes copias en el almacén seguro de Windows. Cada guardado del negocio genera un archivo cifrado nuevo en la carpeta elegida. Comprueba en OneDrive que el archivo terminó de sincronizarse; la aplicación solo puede confirmar la escritura local en esa carpeta, no la recepción del proveedor de nube. Puedes abrir cualquiera de esos archivos desde **Recuperar un respaldo** con la contraseña guardada.
+
+1. Espera a que Pyme360 confirme el guardado. En **Datos y respaldo**, pulsa **Descargar respaldo**, elige una contraseña y repítela.
+2. Localiza el archivo indicado en las descargas del navegador. Cópialo a una USB o a otra ubicación accesible desde otro computador y comprueba que el archivo esté allí. Guarda la contraseña por separado.
+3. Para el ensayo, usa datos ficticios y una instalación limpia de Pyme360 en otro equipo. Crea su administrador local, abre **Datos y respaldo** y pulsa **Elegir archivo**. Selecciona la copia externa, escribe la contraseña y confirma la restauración.
+4. Espera el aviso de restauración y recarga la aplicación. Compara las existencias de un producto, el total de una venta, sus abonos y su saldo pendiente con los valores del equipo de origen. Anota la fecha del ensayo y si los valores coincidieron.
+
+El archivo recupera los datos del negocio. Las cuentas de usuario y la auditoría pertenecen a cada instalación. Si vas a recuperar un archivo en un equipo que ya tiene datos, descarga primero un respaldo de ese equipo.
+
+### Contenido del libro Excel
 
 El libro incluye estas hojas:
 
@@ -233,11 +274,9 @@ La importación es aditiva: omite duplicados y no reemplaza registros existentes
 
 El libro se lee o genera dentro del navegador; el archivo no se envía por internet. Para una copia que puedas restaurar, usa el respaldo JSON. Guarda las copias en un lugar seguro.
 
-## 12. Sincronización opcional
+## 12. Almacenamiento local
 
-Pyme360 funciona sin internet. Para compartir datos entre computadores hace falta una API central propia, con PostgreSQL, HTTPS y correo; Pyme360 no incluye ese alojamiento.
-
-Si ya existe, abre tu perfil y elige **Sincronización**. Desde allí puedes **Crear empresa** o **Conectar cuenta**, invitar al equipo, usar **Sincronizar ahora** y resolver conflictos con **Conservar local** o **Conservar central**. Las cuentas centrales y las locales son independientes. Consulta [typescript-model/README.md](../typescript-model/README.md) y [server/cloud/README.md](../server/cloud/README.md).
+Esta edición trabaja con SQLite en este computador. No requiere PostgreSQL, alojamiento ni una cuenta de base de datos en la nube. Puedes usar Google Drive para conservar copias cifradas y recuperarlas en otra instalación. Esta copia no permite editar los mismos datos simultáneamente desde dos equipos.
 
 ## 13. Si no puedes registrar algo
 

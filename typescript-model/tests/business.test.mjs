@@ -71,6 +71,77 @@ function createState() {
   return { state, customer, supplier, finished, material };
 }
 
+test("cotizar no mueve existencias y convertir conserva el precio, el IVA y el saldo ofrecidos", () => {
+  const { state, customer, finished } = createState();
+  const configured = { ...state, company: { name: "Taller", taxId: "123", city: "Duitama", activity: "" } };
+  const offered = business.createQuotation(configured, {
+    date: "2026-11-09", validUntil: "2026-11-10", customerId: customer.id,
+    lines: [{ productId: finished.id, quantity: 2 }, { productId: finished.id, quantity: 1 }],
+    discount: 20,
+  });
+  const quote = offered.quotations[0];
+  assert.deepEqual(offered.sales, configured.sales);
+  assert.deepEqual(offered.inventoryMovements, configured.inventoryMovements);
+  assert.deepEqual(offered.cashMovements, configured.cashMovements);
+  const edited = business.updateProduct(offered, finished.id, { ...finished, unitPrice: 900, vatRate: 19 });
+  const converted = business.convertQuotation(edited, quote.id, "2026-11-10");
+  const sale = converted.sales[0];
+  assert.deepEqual(sale.lines, quote.lines);
+  assert.equal(sale.total, 280);
+  assert.equal(business.outstandingBalance(sale), quote.total);
+  assert.equal(converted.products.find((product) => product.id === finished.id).stock, 2);
+  assert.equal(converted.inventoryMovements.length, configured.inventoryMovements.length + 1);
+  assert.equal(converted.quotations[0].saleId, sale.id);
+  assert.equal(business.convertQuotation(converted, quote.id, "2026-11-10"), converted);
+  const deleted = business.deleteSale(converted, sale.id);
+  assert.equal(business.convertQuotation(deleted, quote.id, "2026-11-10"), deleted);
+  assert.throws(() => business.convertQuotation(offered, quote.id, "2026-11-11"), /vigencia/);
+
+  const insufficient = business.createQuotation(configured, {
+    date: "2026-11-09", validUntil: "2026-11-10", customerId: customer.id,
+    lines: [{ productId: finished.id, quantity: 6 }], discount: 0,
+  });
+  assert.throws(() => business.convertQuotation(insufficient, insufficient.quotations[0].id, "2026-11-09"), /inventario/);
+  assert.equal(insufficient.sales.length, 0);
+});
+
+test("la devolución reduce el saldo, reembolsa el excedente y reintegra solo lo vendible", () => {
+  const { state, customer, finished } = createState();
+  const ready = business.addFinancialAccount(state, { name: "Caja", type: "cash", openingBalance: 0 });
+  const accountId = ready.financialAccounts[0].id;
+  const sold = business.createSale(ready, {
+    date: "2026-11-09", customerId: customer.id, lines: [{ productId: finished.id, quantity: 4 }],
+    discount: 0, initialPayment: 300, initialPaymentAccountId: accountId,
+    initialPaymentMethod: "Efectivo", invoiceFollowUpStatus: "to_review",
+    externalInvoiceNumber: "", externalInvoiceDate: "",
+  });
+  const saleId = sold.sales[0].id;
+  const input = {
+    date: "2026-11-09", reason: "Cambio de pedido",
+    lines: [{ lineIndex: 0, quantity: 2, restock: true }],
+  };
+  assert.throws(() => business.registerSaleReturn(sold, saleId, input), /caja o banco/i);
+  const record = business.registerSaleReturn(sold, saleId, { ...input, refundAccountId: accountId }, "retry");
+  assert.equal(record.sales[0].total, 400);
+  assert.deepEqual(record.sales[0].payments, sold.sales[0].payments);
+  assert.equal(record.sales[0].returns[0].refund, 100);
+  assert.equal(business.outstandingBalance(record.sales[0]), 0);
+  assert.equal(record.products.find((product) => product.id === finished.id).stock, 3);
+  assert.equal(record.cashMovements.at(-1).amount, 100);
+  assert.equal(record.cashMovements.at(-1).direction, "out");
+  assert.equal(business.registerSaleReturn(record, saleId, input, "retry"), record);
+  assert.throws(() => business.deleteSale(record, saleId), /devoluciones/);
+  assert.throws(() => business.registerSaleReturn(record, saleId, {
+    ...input, lines: [{ lineIndex: 0, quantity: 3, restock: true }],
+  }), /cantidad/);
+  const damaged = business.registerSaleReturn(record, saleId, {
+    ...input, refundAccountId: accountId, lines: [{ lineIndex: 0, quantity: 1, restock: false }],
+  });
+  assert.equal(damaged.products.find((product) => product.id === finished.id).stock, 3);
+  assert.equal(damaged.cashMovements.at(-1).amount, 100);
+  assert.equal(business.netSalePaid(damaged.sales[0]), 100);
+});
+
 test("venta descuenta existencias, conserva el saldo y limita abonos", () => {
   const { state, customer, finished } = createState();
   const sold = business.createSale(state, {
@@ -204,6 +275,36 @@ test("producción consume receta, incorpora producto bueno y asigna costo de mat
   assert.equal(completedOrder.materialCostPerGoodUnit, 125);
   assert.equal(completedOrder.wasteQuantity, 1);
   assert.equal(completed.inventoryMovements.at(-1).quantity, 4);
+});
+
+test("el cierre ajusta solo la diferencia de materiales y conserva el costo inicial", () => {
+  const { state, finished, material } = createState();
+  const started = business.createProductionOrder(state, finished.id, 5, "2026-10-31");
+  const order = started.productionOrders[0];
+  const costs = { actualQuantities: [12], laborHours: 1.5, laborHourlyRate: 200, energyCost: 70, overheadCost: 0 };
+  const close = (actualQuantities) =>
+    business.completeProductionOrder(started, order.id, 1, "2026-10-31", { ...costs, actualQuantities });
+
+  assert.throws(() => close([21]), /inventario negativo/);
+  assert.equal(started.productionOrders[0].status, "active");
+  assert.equal(started.products.find((product) => product.id === material.id).stock, 10);
+
+  const extra = close([12]);
+  assert.equal(extra.products.find((product) => product.id === material.id).stock, 8);
+  assert.equal(extra.inventoryMovements.at(-2).quantity, -2);
+  assert.equal(extra.productionOrders[0].materialCostPerGoodUnit, 150);
+
+  const returned = close([8]);
+  assert.equal(returned.products.find((product) => product.id === material.id).stock, 12);
+  assert.equal(returned.inventoryMovements.at(-2).quantity, 2);
+  assert.equal(returned.productionOrders[0].consumedMaterials[0].quantity, 10);
+  assert.equal(returned.productionOrders[0].consumedMaterials[0].actualQuantity, 8);
+  assert.equal(returned.productionOrders[0].estimatedMaterialCost, 500);
+  assert.equal(returned.productionOrders[0].materialCostPerGoodUnit, 100);
+  assert.throws(
+    () => business.completeProductionOrder(returned, order.id, 1, "2026-10-31", costs),
+    /orden activa/,
+  );
 });
 
 test("recetas por lote escalan componentes, conservan versiones y fijan la instantánea de la orden", () => {

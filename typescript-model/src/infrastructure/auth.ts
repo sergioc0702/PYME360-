@@ -1,3 +1,5 @@
+import { LocalApiError } from "./local-api-error";
+
 export type UserRole = "admin" | "operator" | "viewer";
 
 export interface AuthUser {
@@ -28,14 +30,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const message =
-      typeof payload === "object" &&
-      payload !== null &&
-      "error" in payload &&
-      typeof payload.error === "string"
-        ? payload.error
-        : "La operación de autenticación no se pudo completar.";
-    throw new Error(message);
+    throw new LocalApiError(payload, "La operación de autenticación no se pudo completar.");
   }
   return payload as T;
 }

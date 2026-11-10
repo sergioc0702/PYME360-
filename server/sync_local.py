@@ -13,6 +13,7 @@ SYNCED_SECTIONS = (
     "products",
     "recipes",
     "sales",
+    "quotations",
     "purchases",
     "productionOrders",
     "environmentalRecords",
@@ -164,7 +165,11 @@ def make_changes(connection: Any, previous: dict, updated: dict) -> list[dict]:
     for section in SYNCED_SECTIONS:
         before = _records(previous, section)
         after = _records(updated, section)
-        for entity_id in sorted(before.keys() | after.keys()):
+        ids = (
+            dict.fromkeys([*after, *before]) if section == "inventoryMovements"
+            else sorted(before.keys() | after.keys())
+        )
+        for entity_id in ids:
             old_record = before.get(entity_id)
             new_record = after.get(entity_id)
             if old_record == new_record:

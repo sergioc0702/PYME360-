@@ -8,6 +8,7 @@ import argparse
 import getpass
 import hashlib
 import hmac
+import logging
 import math
 import os
 import re
@@ -43,12 +44,28 @@ from electronic_invoicing import (
     parse_supplier_invoice_xml,
     provider_status,
 )
+from state_validation import (
+    TYPESCRIPT_MODEL_SCHEMA_VERSION,
+    business_value_error,
+    ledger_change_error,
+    local_quotation_error,
+    local_sale_returns_error,
+    operator_change_error,
+    payment_integrity_error,
+    removed_electronic_documents,
+    rows_by_id,
+)
+from offsite_backup import write_backup as write_offsite_backup
+from google_drive_backup import authorize_desktop, upload_state as upload_google_backup
+from cloud.quotation_validation import quotation_state_error, valid_quotation_id
+from cloud.sale_returns import return_additions, return_batch_error, valid_return_id
 from sync_local import (
     SYNCED_SECTIONS,
     SINGLETONS,
     enqueue_snapshot,
     enqueue_state_change,
     initialize_sync_tables,
+    make_changes,
     rebuild_rejected_batch,
     synchronization_status,
 )
@@ -69,7 +86,7 @@ LOGIN_LOCK_SECONDS = 60
 login_failures: dict[str, tuple[int, float]] = {}
 login_failures_lock = threading.Lock()
 APP_NAME = "Pyme360"
-TYPESCRIPT_MODEL_SCHEMA_VERSION = 7
+logger = logging.getLogger("pyme360.local")
 PASSWORD_ITERATIONS = 600_000
 SESSION_TTL_SECONDS = 12 * 60 * 60
 PORTS = range(8765, 8791)
@@ -95,6 +112,32 @@ def data_directory() -> Path:
 DATA_DIR = data_directory()
 DB_PATH = DATA_DIR / "pyme360.sqlite3"
 BACKUP_DIR = DATA_DIR / "backups"
+OFFSITE_CONFIG = DATA_DIR / "offsite-backup.json"
+OFFSITE_STATUS = DATA_DIR / "offsite-backup-status.json"
+
+
+def offsite_key_name() -> str:
+    return "offsite-backup:" + hashlib.sha256(str(DATA_DIR.resolve()).encode("utf-8")).hexdigest()[:24]
+
+
+def record_offsite_status(provider: str, *, name: str | None = None, failed: bool = False) -> None:
+    previous = {}
+    if OFFSITE_STATUS.exists():
+        try:
+            previous = json.loads(OFFSITE_STATUS.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+    value = {
+        "provider": provider,
+        "lastSuccessAt": previous.get("lastSuccessAt"),
+        "lastFileName": previous.get("lastFileName"),
+        "failed": failed,
+    }
+    if name is not None:
+        value.update(lastSuccessAt=datetime.now(timezone.utc).isoformat(), lastFileName=name)
+    temporary = OFFSITE_STATUS.with_suffix(".tmp")
+    temporary.write_text(json.dumps(value), encoding="utf-8")
+    temporary.replace(OFFSITE_STATUS)
 BENCHMARK_DIR = DATA_DIR / "benchmarks"
 BENCHMARK_SNAPSHOT_PATH = BENCHMARK_DIR / "official_snapshots.csv"
 BENCHMARK_TEMPLATE_PATH = PROJECT_ROOT / "server" / "benchmark-data" / "official_snapshots.template.csv"
@@ -216,6 +259,99 @@ def create_daily_backup(force: bool = False) -> None:
             old_backup.unlink()
         except OSError:
             pass
+
+
+def configure_offsite_backup(folder: str) -> int:
+    """Enable encrypted copies to an existing synced folder."""
+    destination = Path(folder).expanduser().resolve()
+    if not destination.is_dir() or destination == DATA_DIR or DATA_DIR in destination.parents:
+        print("Selecciona una carpeta sincronizada existente fuera de los datos locales de Pyme360.")
+        return 1
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: F401
+        keyring = sync_keyring()
+    except (ImportError, RuntimeError) as exc:
+        print(f"Instala los requisitos de respaldo seguro antes de continuar: {type(exc).__name__}.")
+        return 1
+    password = getpass.getpass("Contraseña de recuperación (guárdala fuera del equipo): ")
+    if not valid_new_password(password):
+        print("La contraseña debe tener entre 8 y 256 caracteres.")
+        return 1
+    if password != getpass.getpass("Repite la contraseña: "):
+        print("Las contraseñas no coinciden.")
+        return 1
+    # The password is held by the OS credential store, never in SQLite or the config file.
+    keyring.set_password(APP_NAME, offsite_key_name(), password)
+    temporary = OFFSITE_CONFIG.with_suffix(".tmp")
+    temporary.write_text(json.dumps({"folder": str(destination)}), encoding="utf-8")
+    temporary.replace(OFFSITE_CONFIG)
+    try:
+        row = typescript_model_state_row()
+        if row.get("state"):
+            write_offsite_backup(row["state"], password, destination)
+    except (OSError, ValueError):
+        print("Configuración guardada, pero la primera copia no se pudo escribir.")
+        return 1
+    print("Respaldo cifrado automático configurado. Guarda la contraseña por separado.")
+    return 0
+
+
+def configure_google_drive(client_file: str) -> int:
+    """Authorize only Pyme360-created Drive files, then save tokens in OS keyring."""
+    try:
+        config = json.loads(Path(client_file).read_text(encoding="utf-8"))
+        if not isinstance(config.get("installed", {}).get("client_id"), str):
+            raise ValueError("Se necesita un cliente OAuth de tipo aplicación de escritorio.")
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: F401
+        keyring = sync_keyring()
+    except (OSError, ValueError, ImportError, RuntimeError) as exc:
+        print(f"No se pudo preparar Google Drive: {type(exc).__name__}.")
+        return 1
+    password = getpass.getpass("Contraseña de recuperación (guárdala fuera del equipo): ")
+    if not valid_new_password(password) or password != getpass.getpass("Repite la contraseña: "):
+        print("La contraseña no es válida o no coincide.")
+        return 1
+    try:
+        credentials = authorize_desktop(config)
+        row = typescript_model_state_row()
+        if row.get("state"):
+            uploaded, credentials = upload_google_backup(row["state"], password, credentials)
+            record_offsite_status("google_drive", name=uploaded["name"])
+        keyring.set_password(APP_NAME, offsite_key_name(), password)
+        keyring.set_password(APP_NAME, offsite_key_name() + ":google", credentials)
+        temporary = OFFSITE_CONFIG.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"provider": "google_drive"}), encoding="utf-8")
+        temporary.replace(OFFSITE_CONFIG)
+    except Exception as exc:
+        logger.error("google_drive_setup_failed type=%s", type(exc).__name__)
+        print("No se completó la conexión con Google Drive; no se activaron copias automáticas.")
+        return 1
+    print("Google Drive conectado. Comprueba la copia en Drive y guarda la contraseña por separado.")
+    return 0
+
+
+def create_offsite_backup(state: dict | None = None) -> None:
+    if not OFFSITE_CONFIG.exists():
+        return
+    config = json.loads(OFFSITE_CONFIG.read_text(encoding="utf-8"))
+    password = sync_keyring().get_password(APP_NAME, offsite_key_name())
+    if not password:
+        raise RuntimeError("Falta la contraseña del respaldo en el almacén seguro.")
+    if state is None:
+        state = typescript_model_state_row().get("state")
+    if state:
+        if config.get("provider") == "google_drive":
+            keyring = sync_keyring()
+            token_name = offsite_key_name() + ":google"
+            credentials = keyring.get_password(APP_NAME, token_name)
+            if not credentials:
+                raise RuntimeError("Vuelve a conectar Google Drive.")
+            uploaded, refreshed = upload_google_backup(state, password, credentials)
+            keyring.set_password(APP_NAME, token_name, refreshed)
+            record_offsite_status("google_drive", name=uploaded["name"])
+        else:
+            saved = write_offsite_backup(state, password, Path(config["folder"]))
+            record_offsite_status("folder", name=saved.name)
 
 
 def create_pre_cloud_backup() -> Path | None:
@@ -557,7 +693,7 @@ def state_changes(previous: dict, updated: dict) -> list[tuple[str, str, str, li
     """Return changed entity summaries without persisting personal field values in audit."""
     changes: list[tuple[str, str, str, list[str]]] = []
     array_sections = (
-        "contacts", "products", "recipes", "sales", "purchases", "productionOrders",
+        "contacts", "products", "recipes", "sales", "quotations", "purchases", "productionOrders",
         "environmentalRecords", "resourceReadings", "environmentalActions",
         "receiptImports", "inventoryMovements", "financialAccounts", "cashMovements",
         "emissionFactors", "indicatorTargets", "importExtras", "electronicDocuments",
@@ -580,272 +716,6 @@ def state_changes(previous: dict, updated: dict) -> list[tuple[str, str, str, li
         if previous.get(key) != updated.get(key):
             changes.append((key, "settings", "updated", sorted(set(previous.get(key) or {}) | set(updated.get(key) or {}))))
     return changes
-
-
-def operator_change_error(previous: dict, updated: dict) -> str | None:
-    editable_sections = {
-        "contacts", "products", "recipes", "sales", "purchases", "productionOrders",
-        "environmentalRecords", "resourceReadings", "environmentalActions",
-        "receiptImports", "inventoryMovements", "cashMovements", "importExtras",
-        "electronicDocuments", "supplierInvoices",
-    }
-    for key in set(previous) | set(updated):
-        migration_default = (
-            int(previous.get("schemaVersion", 0) or 0) < TYPESCRIPT_MODEL_SCHEMA_VERSION
-            and key in {"environmentalConfig", "inventoryMovements", "financialAccounts", "cashMovements", "taxConfiguration", "electronicDocuments", "supplierInvoices"}
-            and key not in previous
-        )
-        if key == "environmentalConfig" and int(previous.get("schemaVersion", 0) or 0) < 5:
-            old_config = previous.get("environmentalConfig")
-            new_config = updated.get("environmentalConfig")
-            if isinstance(old_config, dict) and isinstance(new_config, dict):
-                migrated_config = dict(new_config)
-                migrated_config.pop("benchmarking", None)
-                migration_default = migrated_config == old_config
-        if previous.get(key) != updated.get(key) and key not in editable_sections and key not in {"schemaVersion"} and not migration_default:
-            return f"El rol operador no puede modificar la sección {key}."
-
-    for section in editable_sections:
-        before_rows = previous.get(section, [])
-        after_rows = updated.get(section, [])
-        if not isinstance(before_rows, list) or not isinstance(after_rows, list):
-            continue
-        before_ids = {str(row.get("id")) for row in before_rows if isinstance(row, dict) and row.get("id") is not None}
-        after_by_id = {str(row.get("id")): row for row in after_rows if isinstance(row, dict) and row.get("id") is not None}
-        if before_ids - after_by_id.keys():
-            return f"Solo el administrador puede eliminar registros de {section}."
-
-    before_extras = {
-        str(extra.get("id")): extra
-        for extra in previous.get("importExtras", [])
-        if isinstance(extra, dict) and extra.get("id") is not None
-    }
-    for extra in updated.get("importExtras", []):
-        if not isinstance(extra, dict):
-            return "Los campos adicionales deben ser registros válidos."
-        if before_extras.get(str(extra.get("id"))) == extra:
-            continue
-        owner_section = extra.get("entityType")
-        if owner_section not in editable_sections or owner_section == "importExtras":
-            return "El rol operador no puede importar campos adicionales de esta sección."
-        owner_rows = updated.get(owner_section, [])
-        if not any(isinstance(row, dict) and str(row.get("id")) == str(extra.get("entityId")) for row in owner_rows):
-            return "Los campos adicionales deben pertenecer a un registro existente de una sección editable."
-
-    for section in ("inventoryMovements", "cashMovements"):
-        before_rows = previous.get(section, [])
-        after_rows = updated.get(section, [])
-        if isinstance(before_rows, list) and isinstance(after_rows, list) and after_rows[:len(before_rows)] != before_rows:
-            return "Los libros de movimientos son inmutables; registra una reversión para corregir un dato."
-
-    for section in ("electronicDocuments", "supplierInvoices"):
-        before_rows = previous.get(section, [])
-        after_rows = updated.get(section, [])
-        if not isinstance(before_rows, list) or not isinstance(after_rows, list):
-            return f"La sección {section} debe conservar el formato de lista."
-        if len(after_rows) < len(before_rows) or after_rows[:len(before_rows)] != before_rows:
-            return "Los documentos tributarios y sus importaciones se conservan como historial; no se editan ni eliminan desde el estado general."
-
-    previous_electronic_documents = previous.get("electronicDocuments", [])
-    for document in updated.get("electronicDocuments", [])[len(previous_electronic_documents):]:
-        if document.get("status") != "draft":
-            return "El estado de aceptación solo puede cambiar desde un conector autorizado; el estado general crea borradores."
-        if document.get("documentNumber") or document.get("providerReference") or document.get("cufe") or document.get("attempts"):
-            return "Solo un conector autorizado puede asignar número, respuesta o intentos de transmisión."
-
-    # On first v2 to v3 migration stock is preserved while opening balances are added.
-    if int(previous.get("schemaVersion", 0) or 0) >= TYPESCRIPT_MODEL_SCHEMA_VERSION:
-        before_stock = {str(row.get("id")): float(row.get("stock", 0) or 0) for row in previous.get("products", []) if isinstance(row, dict)}
-        after_stock = {str(row.get("id")): float(row.get("stock", 0) or 0) for row in updated.get("products", []) if isinstance(row, dict)}
-        appended_movements = updated.get("inventoryMovements", [])[len(previous.get("inventoryMovements", [])):]
-        movement_delta: dict[str, float] = {}
-        for movement in appended_movements:
-            if isinstance(movement, dict):
-                product_id = str(movement.get("productId", ""))
-                movement_delta[product_id] = movement_delta.get(product_id, 0) + float(movement.get("quantity", 0) or 0)
-        for product_id in before_stock.keys() | after_stock.keys():
-            stock_change = after_stock.get(product_id, 0) - before_stock.get(product_id, 0)
-            if abs(stock_change - movement_delta.get(product_id, 0)) > 0.0001:
-                return "Cada cambio de existencia debe estar respaldado por un movimiento de inventario."
-    return None
-
-
-NON_NEGATIVE_FIELDS = {
-    "products": ("stock", "minimumStock", "unitCost", "unitPrice", "vatRate"),
-    "sales": ("discount", "total"),
-    "purchases": ("total",),
-    "cashMovements": ("amount",),
-}
-NON_NEGATIVE_LINE_FIELDS = {
-    "sales": ("quantity", "unitPrice"),
-    "purchases": ("quantity", "lineTotal"),
-}
-
-
-def invalid_amount(value: object) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return True
-    return not math.isfinite(value) or value < 0
-
-
-def business_value_error(previous: dict, updated: dict) -> str | None:
-    """Reject negative amounts in new or edited rows; stored rows are left alone."""
-    for section, fields in NON_NEGATIVE_FIELDS.items():
-        before_rows = previous.get(section, [])
-        after_rows = updated.get(section, [])
-        if not isinstance(before_rows, list) or not isinstance(after_rows, list):
-            continue
-        before_by_id = {str(row.get("id")): row for row in before_rows if isinstance(row, dict)}
-        for row in after_rows:
-            if not isinstance(row, dict) or before_by_id.get(str(row.get("id"))) == row:
-                continue
-            lines = row.get("lines") if isinstance(row.get("lines"), list) else []
-            line_fields = NON_NEGATIVE_LINE_FIELDS.get(section, ())
-            if (
-                any(invalid_amount(row.get(field)) for field in fields)
-                or any(
-                    isinstance(line, dict) and invalid_amount(line.get(field))
-                    for line in lines
-                    for field in line_fields
-                )
-            ):
-                return f"Hay un valor negativo o no numérico en {section}; corrígelo antes de guardar."
-    return None
-
-
-SALE_LOCKED_FIELDS = (
-    "number", "date", "customerId", "customerName", "lines", "subtotal", "discount", "vatAmount", "total",
-)
-MONEY_TOLERANCE = 1
-
-
-def number_or_zero(value: object) -> float:
-    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
-
-
-def rows_by_id(state: dict, section: str) -> dict[str, dict]:
-    rows = state.get(section, [])
-    if not isinstance(rows, list):
-        return {}
-    return {str(row.get("id")): row for row in rows if isinstance(row, dict)}
-
-
-def payments_of(row: dict) -> list[dict]:
-    payments = row.get("payments")
-    return [payment for payment in payments if isinstance(payment, dict)] if isinstance(payments, list) else []
-
-
-def sale_adjustments(state: dict, sale_id: str) -> float:
-    """Las notas aceptadas cambian lo que se puede cobrar, igual que en outstandingBalance."""
-    total = 0.0
-    for document in rows_by_id(state, "electronicDocuments").values():
-        if (
-            str(document.get("saleId")) != sale_id
-            or document.get("status") not in {"accepted", "delivered"}
-            or document.get("kind") == "invoice"
-        ):
-            continue
-        snapshot = document.get("snapshot") if isinstance(document.get("snapshot"), dict) else {}
-        amount = document.get("adjustmentAmount")
-        amount = number_or_zero(snapshot.get("total") if amount is None else amount)
-        total += -amount if document.get("kind") == "credit_note" else amount
-    return total
-
-
-def new_payments_error(
-    before: dict | None,
-    row: dict,
-    direction: str,
-    limit: float | None,
-    updated: dict,
-    used_movements: set[str],
-    role: str,
-) -> str | None:
-    number = row.get("number") or row.get("id")
-    payments = payments_of(row)
-    current_by_id = {str(payment.get("id")): payment for payment in payments}
-    previous_payments = payments_of(before) if before else []
-    for payment in previous_payments:
-        if current_by_id.get(str(payment.get("id"))) != payment:
-            return f"Los pagos ya registrados de {number} no se cambian ni se eliminan."
-    known = {str(payment.get("id")) for payment in previous_payments}
-    new_payments = [payment for payment in payments if str(payment.get("id")) not in known]
-    if not new_payments:
-        return None
-    if limit is not None and sum(number_or_zero(p.get("amount")) for p in payments) > limit + 0.01:
-        return f"Los pagos de {number} superan su saldo."
-    movements = rows_by_id(updated, "cashMovements")
-    for payment in new_payments:
-        amount = payment.get("amount")
-        if invalid_amount(amount) or number_or_zero(amount) <= 0:
-            return f"Un pago de {number} no tiene un valor válido."
-        movement_id = str(payment.get("cashMovementId") or "")
-        if not movement_id:
-            # El historial importado por un administrador puede no tener caja asociada.
-            if role == "admin":
-                continue
-            return f"Cada pago de {number} debe tener su entrada o salida de dinero."
-        movement = movements.get(movement_id)
-        if (
-            movement is None
-            or movement.get("direction") != direction
-            or abs(number_or_zero(movement.get("amount")) - number_or_zero(amount)) > 0.01
-            or movement_id in used_movements
-        ):
-            return f"El pago de {number} no coincide con su entrada o salida de dinero."
-        used_movements.add(movement_id)
-    return None
-
-
-def payment_integrity_error(previous: dict, updated: dict, role: str) -> str | None:
-    """Las ventas no se editan después de creadas y cada pago debe poder explicarse."""
-    if int(previous.get("schemaVersion", 0) or 0) < TYPESCRIPT_MODEL_SCHEMA_VERSION:
-        return None
-    used_movements = {
-        str(payment.get("cashMovementId"))
-        for section in ("sales", "purchases")
-        for row in rows_by_id(previous, section).values()
-        for payment in payments_of(row)
-        if payment.get("cashMovementId")
-    }
-    previous_sales = rows_by_id(previous, "sales")
-    for sale_id, sale in rows_by_id(updated, "sales").items():
-        before = previous_sales.get(sale_id)
-        if before == sale:
-            continue
-        number = sale.get("number") or sale_id
-        if before is not None:
-            if any(before.get(field) != sale.get(field) for field in SALE_LOCKED_FIELDS):
-                return f"La venta {number} no se puede modificar después de registrada."
-        else:
-            lines = sale.get("lines") if isinstance(sale.get("lines"), list) else []
-            totals = [line.get("total") for line in lines if isinstance(line, dict)]
-            if (
-                lines
-                and len(totals) == len(lines)
-                and all(isinstance(value, (int, float)) for value in totals)
-                and abs(sum(totals) - number_or_zero(sale.get("total"))) > MONEY_TOLERANCE
-            ):
-                return f"El total de la venta {number} no coincide con sus productos."
-        limit = number_or_zero(sale.get("total")) + sale_adjustments(updated, sale_id)
-        error = new_payments_error(before, sale, "in", limit, updated, used_movements, role)
-        if error:
-            return error
-    previous_purchases = rows_by_id(previous, "purchases")
-    for purchase_id, purchase in rows_by_id(updated, "purchases").items():
-        before = previous_purchases.get(purchase_id)
-        if before == purchase:
-            continue
-        limit = None
-        if purchase.get("payableReviewStatus") != "review_required":
-            amount = purchase.get("payableAmount")
-            limit = number_or_zero(purchase.get("total") if amount is None else amount)
-        error = new_payments_error(before, purchase, "out", limit, updated, used_movements, role)
-        if error:
-            return error
-    return None
 
 
 def login_lock_remaining(username: str) -> int:
@@ -871,118 +741,6 @@ def record_login_failure(username: str) -> None:
 def clear_login_failures(username: str) -> None:
     with login_failures_lock:
         login_failures.pop(username.casefold(), None)
-
-
-def is_unsent_draft(document: object) -> bool:
-    """Only a draft that never reached a provider may leave the document history."""
-    return (
-        isinstance(document, dict)
-        and document.get("status") == "draft"
-        and not document.get("attempts")
-        and not document.get("documentNumber")
-        and not document.get("providerReference")
-        and not document.get("cufe")
-    )
-
-
-def removed_electronic_documents(previous: dict, updated: dict) -> list:
-    before_rows = previous.get("electronicDocuments", [])
-    after_rows = updated.get("electronicDocuments", [])
-    if not isinstance(before_rows, list) or not isinstance(after_rows, list):
-        return []
-    after_ids = {str(row.get("id")) for row in after_rows if isinstance(row, dict)}
-    return [row for row in before_rows if isinstance(row, dict) and str(row.get("id")) not in after_ids]
-
-
-def ledger_change_error(previous: dict, updated: dict) -> str | None:
-    """Protect append-only books and require stock changes to match their ledger."""
-    previous_electronic_documents = previous.get("electronicDocuments", [])
-    updated_electronic_documents = updated.get("electronicDocuments", [])
-    if not isinstance(previous_electronic_documents, list) or not isinstance(updated_electronic_documents, list):
-        return "La sección electronicDocuments debe conservar el formato de lista."
-    known_document_ids = {
-        str(document.get("id")) for document in previous_electronic_documents if isinstance(document, dict)
-    }
-    for document in updated_electronic_documents:
-        if isinstance(document, dict) and str(document.get("id")) not in known_document_ids:
-            if document.get("status") != "draft":
-                return "El estado de aceptación solo puede cambiar desde un conector autorizado; el estado general crea borradores."
-            if document.get("documentNumber") or document.get("providerReference") or document.get("cufe") or document.get("attempts"):
-                return "Solo un conector autorizado puede asignar número, respuesta o intentos de transmisión."
-    if int(previous.get("schemaVersion", 0) or 0) < TYPESCRIPT_MODEL_SCHEMA_VERSION:
-        # The v2 -> v3 migration creates the opening-balance ledger from current stock.
-        return None
-
-    for section in ("inventoryMovements", "cashMovements"):
-        before_rows = previous.get(section, [])
-        after_rows = updated.get(section, [])
-        if not isinstance(before_rows, list) or not isinstance(after_rows, list):
-            return f"La sección {section} debe conservar el formato de lista."
-        if len(after_rows) < len(before_rows) or after_rows[:len(before_rows)] != before_rows:
-            return "Los libros de movimientos son inmutables; registra una reversión para corregir un dato."
-
-    removed_documents = removed_electronic_documents(previous, updated)
-    if any(not is_unsent_draft(document) for document in removed_documents):
-        return "Solo se puede eliminar un borrador que nunca se haya enviado al proveedor."
-    removed_document_ids = {str(document.get("id")) for document in removed_documents}
-    for section in ("electronicDocuments", "supplierInvoices"):
-        before_rows = previous.get(section, [])
-        after_rows = updated.get(section, [])
-        if not isinstance(before_rows, list) or not isinstance(after_rows, list):
-            return f"La sección {section} debe conservar el formato de lista."
-        if section == "electronicDocuments":
-            before_rows = [
-                row for row in before_rows
-                if not isinstance(row, dict) or str(row.get("id")) not in removed_document_ids
-            ]
-        if len(after_rows) < len(before_rows) or after_rows[:len(before_rows)] != before_rows:
-            return "Los documentos tributarios y sus importaciones se conservan como historial; no se editan ni eliminan desde el estado general."
-
-    before_products = previous.get("products", [])
-    after_products = updated.get("products", [])
-    if not isinstance(before_products, list) or not isinstance(after_products, list):
-        return "El inventario debe conservar el formato de lista."
-    try:
-        before_stock = {
-            str(row.get("id")): float(row.get("stock", 0) or 0)
-            for row in before_products if isinstance(row, dict)
-        }
-        after_stock = {
-            str(row.get("id")): float(row.get("stock", 0) or 0)
-            for row in after_products if isinstance(row, dict)
-        }
-    except (TypeError, ValueError):
-        return "Un producto contiene una existencia no válida."
-    if any(not math.isfinite(stock) for stock in (*before_stock.values(), *after_stock.values())):
-        return "Un producto contiene una existencia no válida."
-    before_movements = previous.get("inventoryMovements", [])
-    appended_movements = updated.get("inventoryMovements", [])[len(before_movements):]
-    movement_delta: dict[str, float] = {}
-    running_stock = dict(before_stock)
-    for movement in appended_movements:
-        if isinstance(movement, dict):
-            product_id = str(movement.get("productId", ""))
-            try:
-                quantity = float(movement.get("quantity", 0) or 0)
-                balance_after = float(movement.get("balanceAfter", 0) or 0)
-            except (TypeError, ValueError):
-                return "Un movimiento de inventario contiene cantidades no válidas."
-            if not math.isfinite(quantity) or not math.isfinite(balance_after):
-                return "Un movimiento de inventario contiene cantidades no válidas."
-            if product_id not in after_stock:
-                return "Un movimiento de inventario debe pertenecer a un producto existente."
-            balance = running_stock.get(product_id, 0) + quantity
-            if balance < -0.0001:
-                return "Un movimiento no puede dejar existencias negativas."
-            if abs(balance - balance_after) > 0.0001:
-                return "El saldo posterior del movimiento no coincide con el inventario calculado."
-            running_stock[product_id] = balance
-            movement_delta[product_id] = movement_delta.get(product_id, 0) + quantity
-    for product_id in before_stock.keys() | after_stock.keys():
-        stock_change = after_stock.get(product_id, 0) - before_stock.get(product_id, 0)
-        if abs(stock_change - movement_delta.get(product_id, 0)) > 0.0001:
-            return "Cada cambio de existencia debe estar respaldado por un movimiento de inventario."
-    return None
 
 
 def sync_api_url(value: object) -> str:
@@ -1300,6 +1058,16 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def _internal_error(self, operation: str, message: str, error: Exception) -> None:
+        incident_id = secrets.token_hex(16)
+        logger.error(
+            "operation=%s incident_id=%s exception_type=%s",
+            operation,
+            incident_id,
+            type(error).__name__,
+        )
+        self._json(500, {"error": message, "incidentId": incident_id})
+
     def _read_typescript_model_json(self) -> dict:
         raw_length = self.headers.get("Content-Length", "")
         try:
@@ -1328,6 +1096,11 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
             rows = state.get(key)
             if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
                 raise ValueError(f"La sección {key} debe ser una lista de registros.")
+        if not isinstance(state.get("quotations", []), list) or any(
+            not isinstance(quote, dict) or not valid_quotation_id(quote.get("id"))
+            for quote in state.get("quotations", [])
+        ):
+            raise ValueError("La sección cotizaciones contiene registros no válidos.")
         if "receiptImports" in state and (not isinstance(state["receiptImports"], list) or any(not isinstance(row, dict) for row in state["receiptImports"])):
             raise ValueError("La sección receiptImports debe ser una lista de registros.")
         for key in ("inventoryMovements", "financialAccounts", "cashMovements"):
@@ -1642,7 +1415,11 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
             except sqlite3.IntegrityError:
                 self._json(409, {"error": "No fue posible migrar los usuarios heredados porque hay nombres duplicados."})
             except sqlite3.Error as exc:
-                self._json(500, {"error": "SQLite no pudo migrar los usuarios locales.", "detail": str(exc)})
+                self._internal_error(
+                    "migrate_local_users",
+                    "No se pudieron transferir los usuarios anteriores. Vuelve a intentarlo.",
+                    exc,
+                )
             return True
 
         if method == "POST" and path in {"/api/v1/auth/bootstrap", "/api/v1/auth/login"}:
@@ -1678,7 +1455,11 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                     cookie, _ = self._make_session(user_id)
                     self._json(200, {"user": public_user(user_row)}, {"Set-Cookie": cookie})
                 except sqlite3.Error as exc:
-                    self._json(500, {"error": "No se pudo crear el administrador en SQLite.", "detail": str(exc)})
+                    self._internal_error(
+                        "bootstrap_local_admin",
+                        "No se pudo completar la configuración del administrador. Vuelve a intentarlo.",
+                        exc,
+                    )
                 return True
 
             if not username or not password:
@@ -1901,9 +1682,27 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         if path.startswith("/api/") and not is_authorized:
             return self._json(403, {"error": "Esta API solo acepta solicitudes del mismo computador."})
         if path == "/api/v1/typescript-model/state":
+            try:
+                if not self._session_user():
+                    return self._json(401, {"error": "Inicia sesión para consultar los datos."})
+                state_row = typescript_model_state_row()
+            except (sqlite3.Error, json.JSONDecodeError) as exc:
+                return self._internal_error(
+                    "read_local_state",
+                    "No se pudieron abrir los datos guardados. Vuelve a cargar la página.",
+                    exc,
+                )
+            return self._json(200, state_row)
+        if path == "/api/v1/backups/offsite-status":
             if not self._session_user():
-                return self._json(401, {"error": "Inicia sesión para consultar los datos."})
-            return self._json(200, typescript_model_state_row())
+                return self._json(401, {"error": "Inicia sesión para consultar los respaldos."})
+            try:
+                config = json.loads(OFFSITE_CONFIG.read_text(encoding="utf-8")) if OFFSITE_CONFIG.exists() else {}
+                status = json.loads(OFFSITE_STATUS.read_text(encoding="utf-8")) if OFFSITE_STATUS.exists() else {}
+            except (OSError, ValueError):
+                return self._json(500, {"error": "No se pudo consultar el estado del respaldo externo."})
+            return self._json(200, {**status, "configured": bool(config),
+                                    "provider": config.get("provider", "folder") if config else None})
         if path == "/api/v1/sync/status":
             actor = self._session_user()
             if not actor:
@@ -2082,6 +1881,9 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
             return self._json(403, {"error": "El rol de consulta no puede modificar información."})
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         restore_requested = query.get("restore", ["0"])[0] == "1"
+        return_id = query.get("confirmReturn", [None])[0]
+        if return_id is not None and (restore_requested or not valid_return_id(return_id)):
+            return self._json(400, {"error": "El identificador de la devolución no es válido."})
         if restore_requested and actor["role"] != "admin":
             return self._json(403, {"error": "Solo un administrador puede restaurar un respaldo."})
         try:
@@ -2117,6 +1919,15 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                 if not restore_requested and int(previous_state.get("schemaVersion", 0) or 0) < TYPESCRIPT_MODEL_SCHEMA_VERSION and actor["role"] != "admin":
                     connection.rollback()
                     return self._json(403, {"error": "Un administrador debe actualizar la base de datos antes de que los operadores puedan continuar."})
+                sync_config = connection.execute(
+                    "SELECT device_id, workspace_id, api_url FROM sync_configuration WHERE id=1"
+                ).fetchone()
+                returns_issue = local_sale_returns_error(
+                    {} if restore_requested and not sync_config else previous_state, updated_state,
+                )
+                if returns_issue:
+                    connection.rollback()
+                    return self._json(400, {"error": returns_issue})
                 if not restore_requested:
                     ledger_error = ledger_change_error(previous_state, updated_state)
                     if ledger_error:
@@ -2130,6 +1941,12 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                     if value_error:
                         connection.rollback()
                         return self._json(400, {"error": value_error})
+                quotation_issue = local_quotation_error(
+                    previous_state, updated_state, linked=sync_config is not None, restoring=restore_requested,
+                )
+                if quotation_issue:
+                    connection.rollback()
+                    return self._json(400, {"error": quotation_issue})
                 if actor["role"] == "operator":
                     role_error = operator_change_error(previous_state, updated_state)
                     if role_error:
@@ -2138,11 +1955,38 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                 if (
                     not restore_requested
                     and removed_electronic_documents(previous_state, updated_state)
-                    and connection.execute("SELECT 1 FROM sync_configuration WHERE id=1").fetchone()
+                    and sync_config
                 ):
                     # La API central conserva estos documentos como inmutables.
                     connection.rollback()
                     return self._json(409, {"error": "Este equipo está vinculado a la nube: los borradores electrónicos no se pueden eliminar porque la API central los conserva como historial."})
+                additions = return_additions(rows_by_id(previous_state, "sales"), rows_by_id(updated_state, "sales"))
+                if sync_config and additions and return_id is None:
+                    return self._json(409, {"error": "Conéctate y confirma la devolución con la central."})
+                return_changes = []
+                if additions and not restore_requested:
+                    return_changes = make_changes(connection, previous_state, updated_state)
+                    returns_issue = return_batch_error(
+                        rows_by_id(previous_state, "sales"), rows_by_id(updated_state, "sales"),
+                        rows_by_id(previous_state, "products"), rows_by_id(previous_state, "financialAccounts"),
+                        return_changes, return_id or additions[0][1]["id"],
+                    )
+                    if returns_issue:
+                        return self._json(400, {"error": returns_issue})
+                if return_id is not None:
+                    if not sync_config or len(additions) != 1 or additions[0][1]["id"] != return_id:
+                        return self._json(400, {"error": "Selecciona una devolución para confirmar con la central."})
+                    if (
+                        connection.execute("SELECT 1 FROM sync_outbox WHERE status IN ('pending','conflict') LIMIT 1").fetchone()
+                        or connection.execute("SELECT 1 FROM sync_conflicts WHERE resolved_at IS NULL LIMIT 1").fetchone()
+                    ):
+                        return self._json(409, {"error": "Resuelve los cambios pendientes antes de devolver."})
+                    batch = {
+                        "batchId": return_id, "deviceId": sync_config["device_id"],
+                        "changes": return_changes,
+                    }
+                    connection.rollback()
+                    return self._send_cloud_return(actor, sync_config, batch, current_revision)
                 next_revision = current_revision + 1
                 connection.execute(
                     """INSERT INTO typescript_model_state (id, schema_version, revision, payload_json, updated_at)
@@ -2155,9 +1999,6 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                     write_audit(connection, actor, action, entity_type, entity_id, {"fields": fields})
                 if restore_requested:
                     write_audit(connection, actor, "restored", "application_data", "backup", {"schemaVersion": updated_state.get("schemaVersion")})
-                sync_config = connection.execute(
-                    "SELECT device_id FROM sync_configuration WHERE id=1"
-                ).fetchone()
                 if sync_config:
                     enqueue_state_change(
                         connection,
@@ -2166,15 +2007,29 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                         actor["id"],
                         sync_config["device_id"],
                     )
+                pending_count = int(connection.execute(
+                    "SELECT COUNT(*) FROM sync_outbox WHERE status='pending'"
+                ).fetchone()[0])
                 connection.commit()
         except sqlite3.Error as exc:
-            return self._json(500, {"error": "SQLite no pudo guardar los datos. Revisa el espacio y los permisos del computador.", "detail": str(exc)})
+            return self._internal_error(
+                "save_local_state",
+                "No se guardaron los cambios. Revisa si hay espacio disponible y vuelve a intentarlo.",
+                exc,
+            )
         try:
             create_daily_backup(force=True)
         except (OSError, sqlite3.Error) as exc:
             print(f"Aviso: no se pudo actualizar la copia diaria del modelo TypeScript: {exc}")
-        with db_session() as connection:
-            pending_count = int(connection.execute("SELECT COUNT(*) FROM sync_outbox WHERE status='pending'").fetchone()[0])
+        try:
+            create_offsite_backup(updated_state)
+        except Exception as exc:
+            logger.error("offsite_backup_failed type=%s", type(exc).__name__)
+            try:
+                config = json.loads(OFFSITE_CONFIG.read_text(encoding="utf-8"))
+                record_offsite_status(config.get("provider", "folder"), failed=True)
+            except (OSError, ValueError):
+                pass
         self._json(200, {"revision": next_revision, "schemaVersion": TYPESCRIPT_MODEL_SCHEMA_VERSION, "updatedAt": current_time, "pendingSyncBatches": pending_count, "savedLocally": True})
 
     def _sync_token(self, actor: dict, workspace_id: str) -> str:
@@ -2194,6 +2049,25 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
         if not token:
             raise RuntimeError("Vincula primero esta cuenta local con el espacio de trabajo en la nube.")
         return token
+
+    def _send_cloud_return(self, actor: dict, config: sqlite3.Row, batch: dict, revision: int) -> None:
+        try:
+            token = self._sync_token(actor, config["workspace_id"])
+        except RuntimeError as exc:
+            return self._json(409, {"error": str(exc)})
+        try:
+            status, result = cloud_json_request(
+                config["api_url"], "/api/v1/sync/confirm-return", batch, token, "POST",
+            )
+        except (OSError, ValueError):
+            return self._json(502, {"error": "La respuesta central no llegó. Sincroniza y vuelve a intentar."})
+        if status == 200 and result.get("accepted") is True and result.get("batchId") == batch["batchId"]:
+            return self._json(200, {"revision": revision})
+        if status == 404 and result.get("error") in (None, "Not Found"):
+            return self._json(502, {"error": "La API central debe admitir devoluciones. Revisa su versión."})
+        if status < 400:
+            return self._json(502, {"error": "La central no confirmó la devolución. Vuelve a sincronizar."})
+        return self._json(status, result)
 
     def _sync_store_conflict(
         self,
@@ -2270,6 +2144,13 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                 (str(change.get("entityType")), str(change.get("entityId"))) in dirty_entities
                 for change in batch_changes
             ):
+                if valid_return_id(batch_id) or any(
+                    change.get("entityType") == "quotations"
+                    and isinstance(change.get("payload"), dict)
+                    and change["payload"].get("saleId")
+                    for change in batch_changes
+                ):
+                    raise ValueError("Resuelve los cambios locales antes de incorporar la operación confirmada.")
                 for change in batch_changes:
                     connection.execute(
                         """INSERT INTO sync_entity_versions (entity_type, entity_id, remote_version)
@@ -2288,6 +2169,8 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                     records = candidate.setdefault(entity_type, [])
                     if not isinstance(records, list):
                         raise ValueError(f"La sección sincronizada {entity_type} no es una lista.")
+                    if action == "upsert" and isinstance(payload, dict) and payload in records:
+                        continue
                     records[:] = [
                         item for item in records
                         if not isinstance(item, dict) or str(item.get("id")) != entity_id
@@ -2299,6 +2182,13 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                 else:
                     raise ValueError("La API central devolvió una sección desconocida.")
             issue = ledger_change_error(current_state, candidate)
+            if not issue:
+                issue = local_sale_returns_error(current_state, candidate)
+            if not issue and any(change.get("entityType") in {"quotations", "sales"} for change in batch_changes):
+                issue = quotation_state_error(
+                    {}, rows_by_id(candidate, "quotations"), rows_by_id(candidate, "sales"),
+                    conversion_allowed=False, restoring=True,
+                )
             if issue:
                 raise ValueError(f"La API central devolvió un lote que no supera la validación local: {issue}")
             current_state = candidate
@@ -2322,6 +2212,44 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
             write_audit(connection, actor, "synchronized", "workspace", "cloud", {"records": applied_count})
         return applied_count
 
+    def _confirm_cloud_quotation(self, actor: dict, payload: dict) -> None:
+        if actor["role"] not in {"admin", "operator"}:
+            return self._json(403, {"error": "El rol de consulta no puede convertir cotizaciones."})
+        quote_id = payload.get("quotationId")
+        expected = payload.get("expectedRevision")
+        if not valid_quotation_id(quote_id) or type(expected) is not int or expected < 0:
+            return self._json(400, {"error": "Revisa la cotización y la revisión de datos."})
+        with db_session() as connection:
+            config = connection.execute("SELECT workspace_id, api_url FROM sync_configuration WHERE id=1").fetchone()
+            state_row = connection.execute(
+                "SELECT revision, payload_json FROM typescript_model_state WHERE id=1"
+            ).fetchone()
+            if not config or not state_row or state_row["revision"] != expected:
+                return self._json(409, {"error": "Vuelve a cargar los datos y sincroniza antes de confirmar."})
+            if (
+                connection.execute("SELECT 1 FROM sync_outbox WHERE status IN ('pending', 'conflict') LIMIT 1").fetchone()
+                or connection.execute("SELECT 1 FROM sync_conflicts WHERE resolved_at IS NULL LIMIT 1").fetchone()
+            ):
+                return self._json(409, {"error": "Resuelve los cambios pendientes de sincronización antes de convertir."})
+            quote = rows_by_id(json.loads(state_row["payload_json"]), "quotations").get(quote_id)
+            if not quote:
+                return self._json(404, {"error": "No se encontró la cotización en este equipo."})
+        try:
+            token = self._sync_token(actor, config["workspace_id"])
+        except RuntimeError as exc:
+            return self._json(409, {"error": str(exc)})
+        try:
+            status, result = cloud_json_request(
+                config["api_url"], f"/api/v1/quotations/{quote_id}/convert", {}, token, "POST",
+            )
+        except (OSError, TimeoutError, ValueError):
+            return self._json(502, {"error": "No se pudo confirmar la respuesta central. Sincroniza y vuelve a intentarlo."})
+        if status == 404 and result.get("error") in (None, "Not Found"):
+            return self._json(502, {"error": "La API central debe admitir cotizaciones. Revisa su versión."})
+        if status == 200 and result.get("saleId") != f"sale-{quote_id}":
+            return self._json(502, {"error": "La central no devolvió la venta esperada. Vuelve a sincronizar."})
+        return self._json(status, result)
+
     def _handle_sync_post(self, path: str) -> bool:
         if not self._is_typescript_model_request():
             self._json(403, {"error": "Esta API solo acepta solicitudes locales de Pyme360."})
@@ -2334,6 +2262,10 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
             payload = self._read_auth_json()
         except (ValueError, OverflowError) as exc:
             self._json(400, {"error": str(exc)})
+            return True
+
+        if path == "/api/v1/sync/convert-quotation":
+            self._confirm_cloud_quotation(actor, payload)
             return True
 
         if path == "/api/v1/sync/register":
@@ -2433,7 +2365,7 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
             saved_state = json.loads(saved_row["payload_json"]) if saved_row else None
             local_has_business_data = isinstance(saved_state, dict) and (
                 saved_state.get("company") is not None
-                or any(saved_state.get(section) for section in ("contacts", "products", "sales", "purchases", "productionOrders", "resourceReadings", "inventoryMovements", "cashMovements"))
+                or any(saved_state.get(section) for section in ("contacts", "products", "sales", "quotations", "purchases", "productionOrders", "resourceReadings", "inventoryMovements", "cashMovements"))
             )
             if not existing_config and response.get("hasSyncedData") and local_has_business_data:
                 self._json(409, {"error": "Esta base local ya tiene datos de otra instalación. Para evitar mezclar empresas, conecta primero una base vacía o migra mediante respaldo y validación."})
@@ -2879,7 +2811,10 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
                                     rows.append(change["payload"])
                             elif entity_type in SINGLETONS and entity_id == "settings":
                                 next_state[entity_type] = change.get("payload") if action != "delete" else None
-                        validation_error = ledger_change_error(before_state, next_state)
+                        validation_error = (
+                            ledger_change_error(before_state, next_state)
+                            or local_sale_returns_error(before_state, next_state)
+                        )
                         if validation_error:
                             connection.rollback()
                             self._json(409, {"error": f"La versión resuelta no conserva los libros locales: {validation_error}"})
@@ -3184,6 +3119,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Servidor local de Pyme360")
     parser.add_argument("--no-browser", action="store_true", help="No abrir el navegador al iniciar")
     parser.add_argument("--reset-password", metavar="USUARIO", help="Cambiar la contraseña de un usuario local y salir")
+    parser.add_argument("--configure-offsite-backup", metavar="CARPETA", help="Cifrar automáticamente los cambios en una carpeta sincronizada")
+    parser.add_argument("--configure-google-drive", metavar="OAUTH_JSON", help="Conectar copias cifradas a Google Drive con OAuth de escritorio")
     arguments = parser.parse_args()
     load_env_file(Path(__file__).with_name(".env"))
     if sys.version_info < MIN_PYTHON:
@@ -3198,6 +3135,10 @@ def main() -> int:
         return 1
     if arguments.reset_password:
         return reset_local_password(arguments.reset_password)
+    if arguments.configure_offsite_backup:
+        return configure_offsite_backup(arguments.configure_offsite_backup)
+    if arguments.configure_google_drive:
+        return configure_google_drive(arguments.configure_google_drive)
     if not prepare_frontend():
         return 1
     try:

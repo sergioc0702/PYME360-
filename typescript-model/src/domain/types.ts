@@ -164,7 +164,54 @@ export interface Sale {
   externalInvoiceNumber: string;
   externalInvoiceDate: string;
   dueDate?: string;
+  quotationId?: string;
+  returns?: SaleReturn[];
 }
+
+export interface SaleReturn {
+  id: string;
+  date: string;
+  reason: string;
+  lines: Array<{
+    lineIndex: number;
+    quantity: number;
+    amount: number;
+    restock: boolean;
+    inventoryMovementId?: string;
+  }>;
+  total: number;
+  paymentCount: number;
+  refund: number;
+  cashMovementId?: string;
+}
+
+export interface SaleReturnInput {
+  date: string;
+  reason: string;
+  lines: Array<{ lineIndex: number; quantity: number; restock: boolean }>;
+  refundAccountId?: string;
+}
+
+export interface Quotation {
+  id: string;
+  number: string;
+  date: string;
+  validUntil: string;
+  company: Company;
+  customerId: string;
+  customerName: string;
+  customerTaxId: string;
+  lines: SaleLine[];
+  subtotal: number;
+  discount: number;
+  vatAmount: number;
+  total: number;
+  saleId?: string;
+}
+
+export type QuotationInput = Pick<SaleInput, "date" | "customerId" | "lines" | "discount"> & {
+  validUntil: string;
+};
 
 export interface TaxConfiguration {
   countryCode: "CO";
@@ -359,6 +406,8 @@ export interface ConsumedMaterial {
   sku: string;
   productName: string;
   quantity: number;
+  /** Measured at closure. Older orders only have the planned quantity. */
+  actualQuantity?: number;
   unit?: string;
   environmentalUnit?: string;
   environmentalConversionFactor?: number;
@@ -383,6 +432,10 @@ export interface ProductionOrder {
   estimatedMaterialCost?: number | null;
   /** Direct material cost allocated per good unit at completion. */
   materialCostPerGoodUnit?: number | null;
+  laborHours?: number;
+  laborHourlyRate?: number;
+  energyCost?: number;
+  overheadCost?: number;
   recipeVersionId?: string;
   recipeVersionNumber?: number;
   expectedYieldPercent?: number;
@@ -608,6 +661,7 @@ export interface AppState {
   products: Product[];
   recipes: Recipe[];
   sales: Sale[];
+  quotations: Quotation[];
   taxConfiguration: TaxConfiguration;
   electronicDocuments: ElectronicDocument[];
   supplierInvoices: SupplierInvoiceDocument[];
