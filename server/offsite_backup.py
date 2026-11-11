@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ITERATIONS = 600_000
+KEEP_COPIES = 30
 
 
 def encrypt_state(state: dict, password: str) -> str:
@@ -51,4 +52,15 @@ def write_backup(state: dict, password: str, destination: Path) -> Path:
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)
+    prune_backups(destination)
     return target
+
+
+def prune_backups(destination: Path, keep: int = KEEP_COPIES) -> list[Path]:
+    """Conserva las copias automáticas más recientes; las manuales del usuario no se tocan."""
+    copies = sorted(destination.glob("pyme360-automatico-*.json"), key=lambda item: item.name, reverse=True)
+    removed = []
+    for old in copies[keep:]:
+        old.unlink(missing_ok=True)
+        removed.append(old)
+    return removed

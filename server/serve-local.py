@@ -114,6 +114,9 @@ DB_PATH = DATA_DIR / "pyme360.sqlite3"
 BACKUP_DIR = DATA_DIR / "backups"
 OFFSITE_CONFIG = DATA_DIR / "offsite-backup.json"
 OFFSITE_STATUS = DATA_DIR / "offsite-backup-status.json"
+# Subir el estado completo en cada guardado llenaba Drive y hacía esperar al usuario.
+OFFSITE_MIN_INTERVAL_SECONDS = 60 * 60
+offsite_lock = threading.Lock()
 
 
 def offsite_key_name() -> str:
@@ -328,6 +331,41 @@ def configure_google_drive(client_file: str) -> int:
         return 1
     print("Google Drive conectado. Comprueba la copia en Drive y guarda la contraseña por separado.")
     return 0
+
+
+def offsite_backup_due(now: datetime | None = None) -> bool:
+    if not OFFSITE_CONFIG.exists():
+        return False
+    try:
+        status = json.loads(OFFSITE_STATUS.read_text(encoding="utf-8")) if OFFSITE_STATUS.exists() else {}
+        last = datetime.fromisoformat(status["lastSuccessAt"]) if status.get("lastSuccessAt") else None
+    except (OSError, ValueError, TypeError):
+        last = None
+    if last is None or status.get("failed"):
+        return True
+    return ((now or datetime.now(timezone.utc)) - last).total_seconds() >= OFFSITE_MIN_INTERVAL_SECONDS
+
+
+def run_offsite_backup() -> None:
+    try:
+        create_offsite_backup()
+    except Exception as exc:  # noqa: BLE001 - la copia externa nunca debe tumbar el servidor
+        logger.error("offsite_backup_failed type=%s", type(exc).__name__)
+        try:
+            config = json.loads(OFFSITE_CONFIG.read_text(encoding="utf-8"))
+            record_offsite_status(config.get("provider", "folder"), failed=True)
+        except (OSError, ValueError):
+            pass
+    finally:
+        offsite_lock.release()
+
+
+def schedule_offsite_backup() -> bool:
+    """Como máximo una copia por hora, en segundo plano y con el estado más reciente."""
+    if not offsite_backup_due() or not offsite_lock.acquire(blocking=False):
+        return False
+    threading.Thread(target=run_offsite_backup, name="pyme360-offsite-backup", daemon=True).start()
+    return True
 
 
 def create_offsite_backup(state: dict | None = None) -> None:
@@ -2021,15 +2059,7 @@ class Pyme360Handler(SimpleHTTPRequestHandler):
             create_daily_backup(force=True)
         except (OSError, sqlite3.Error) as exc:
             print(f"Aviso: no se pudo actualizar la copia diaria del modelo TypeScript: {exc}")
-        try:
-            create_offsite_backup(updated_state)
-        except Exception as exc:
-            logger.error("offsite_backup_failed type=%s", type(exc).__name__)
-            try:
-                config = json.loads(OFFSITE_CONFIG.read_text(encoding="utf-8"))
-                record_offsite_status(config.get("provider", "folder"), failed=True)
-            except (OSError, ValueError):
-                pass
+        schedule_offsite_backup()
         self._json(200, {"revision": next_revision, "schemaVersion": TYPESCRIPT_MODEL_SCHEMA_VERSION, "updatedAt": current_time, "pendingSyncBatches": pending_count, "savedLocally": True})
 
     def _sync_token(self, actor: dict, workspace_id: str) -> str:
@@ -3145,6 +3175,7 @@ def main() -> int:
         create_daily_backup()
     except (OSError, sqlite3.Error) as exc:
         print(f"Aviso: no se pudo actualizar la copia diaria al iniciar: {exc}")
+    schedule_offsite_backup()
     server = None
     for port in PORTS:
         try:

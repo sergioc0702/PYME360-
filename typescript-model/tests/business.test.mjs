@@ -45,19 +45,25 @@ function createState() {
   });
   const customer = state.contacts.find((contact) => contact.role === "customer");
   const supplier = state.contacts.find((contact) => contact.role === "supplier");
-  state = business.addProduct(state, baseProduct({
-    name: "Producto terminado",
-    type: "finished",
-    unit: "unidad",
-    stock: 5,
-    unitCost: 0,
-    unitPrice: 100,
-  }));
-  state = business.addProduct(state, baseProduct({
-    name: "Materia prima",
-    stock: 20,
-    unitCost: 50,
-  }));
+  state = business.addProduct(
+    state,
+    baseProduct({
+      name: "Producto terminado",
+      type: "finished",
+      unit: "unidad",
+      stock: 5,
+      unitCost: 0,
+      unitPrice: 100,
+    }),
+  );
+  state = business.addProduct(
+    state,
+    baseProduct({
+      name: "Materia prima",
+      stock: 20,
+      unitCost: 50,
+    }),
+  );
   const finished = state.products.find((product) => product.name === "Producto terminado");
   const material = state.products.find((product) => product.name === "Materia prima");
   state = business.saveRecipeVersion(state, {
@@ -73,17 +79,30 @@ function createState() {
 
 test("cotizar no mueve existencias y convertir conserva el precio, el IVA y el saldo ofrecidos", () => {
   const { state, customer, finished } = createState();
-  const configured = { ...state, company: { name: "Taller", taxId: "123", city: "Duitama", activity: "" } };
+  const configured = {
+    ...state,
+    company: { name: "Taller", taxId: "123", city: "Duitama", activity: "" },
+  };
   const offered = business.createQuotation(configured, {
-    date: "2026-11-09", validUntil: "2026-11-10", customerId: customer.id,
-    lines: [{ productId: finished.id, quantity: 2 }, { productId: finished.id, quantity: 1 }],
+    date: "2026-11-09",
+    validUntil: "2026-11-10",
+    customerId: customer.id,
+    lines: [
+      { productId: finished.id, quantity: 2 },
+      { productId: finished.id, quantity: 1 },
+    ],
     discount: 20,
   });
   const quote = offered.quotations[0];
+  assert.equal(quote.number, "COT-0001");
   assert.deepEqual(offered.sales, configured.sales);
   assert.deepEqual(offered.inventoryMovements, configured.inventoryMovements);
   assert.deepEqual(offered.cashMovements, configured.cashMovements);
-  const edited = business.updateProduct(offered, finished.id, { ...finished, unitPrice: 900, vatRate: 19 });
+  const edited = business.updateProduct(offered, finished.id, {
+    ...finished,
+    unitPrice: 900,
+    vatRate: 19,
+  });
   const converted = business.convertQuotation(edited, quote.id, "2026-11-10");
   const sale = converted.sales[0];
   assert.deepEqual(sale.lines, quote.lines);
@@ -98,30 +117,52 @@ test("cotizar no mueve existencias y convertir conserva el precio, el IVA y el s
   assert.throws(() => business.convertQuotation(offered, quote.id, "2026-11-11"), /vigencia/);
 
   const insufficient = business.createQuotation(configured, {
-    date: "2026-11-09", validUntil: "2026-11-10", customerId: customer.id,
-    lines: [{ productId: finished.id, quantity: 6 }], discount: 0,
+    date: "2026-11-09",
+    validUntil: "2026-11-10",
+    customerId: customer.id,
+    lines: [{ productId: finished.id, quantity: 6 }],
+    discount: 0,
   });
-  assert.throws(() => business.convertQuotation(insufficient, insufficient.quotations[0].id, "2026-11-09"), /inventario/);
+  assert.throws(
+    () => business.convertQuotation(insufficient, insufficient.quotations[0].id, "2026-11-09"),
+    /inventario/,
+  );
   assert.equal(insufficient.sales.length, 0);
 });
 
 test("la devolución reduce el saldo, reembolsa el excedente y reintegra solo lo vendible", () => {
   const { state, customer, finished } = createState();
-  const ready = business.addFinancialAccount(state, { name: "Caja", type: "cash", openingBalance: 0 });
+  const ready = business.addFinancialAccount(state, {
+    name: "Caja",
+    type: "cash",
+    openingBalance: 0,
+  });
   const accountId = ready.financialAccounts[0].id;
   const sold = business.createSale(ready, {
-    date: "2026-11-09", customerId: customer.id, lines: [{ productId: finished.id, quantity: 4 }],
-    discount: 0, initialPayment: 300, initialPaymentAccountId: accountId,
-    initialPaymentMethod: "Efectivo", invoiceFollowUpStatus: "to_review",
-    externalInvoiceNumber: "", externalInvoiceDate: "",
+    date: "2026-11-09",
+    customerId: customer.id,
+    lines: [{ productId: finished.id, quantity: 4 }],
+    discount: 0,
+    initialPayment: 300,
+    initialPaymentAccountId: accountId,
+    initialPaymentMethod: "Efectivo",
+    invoiceFollowUpStatus: "to_review",
+    externalInvoiceNumber: "",
+    externalInvoiceDate: "",
   });
   const saleId = sold.sales[0].id;
   const input = {
-    date: "2026-11-09", reason: "Cambio de pedido",
+    date: "2026-11-09",
+    reason: "Cambio de pedido",
     lines: [{ lineIndex: 0, quantity: 2, restock: true }],
   };
   assert.throws(() => business.registerSaleReturn(sold, saleId, input), /caja o banco/i);
-  const record = business.registerSaleReturn(sold, saleId, { ...input, refundAccountId: accountId }, "retry");
+  const record = business.registerSaleReturn(
+    sold,
+    saleId,
+    { ...input, refundAccountId: accountId },
+    "retry",
+  );
   assert.equal(record.sales[0].total, 400);
   assert.deepEqual(record.sales[0].payments, sold.sales[0].payments);
   assert.equal(record.sales[0].returns[0].refund, 100);
@@ -131,11 +172,18 @@ test("la devolución reduce el saldo, reembolsa el excedente y reintegra solo lo
   assert.equal(record.cashMovements.at(-1).direction, "out");
   assert.equal(business.registerSaleReturn(record, saleId, input, "retry"), record);
   assert.throws(() => business.deleteSale(record, saleId), /devoluciones/);
-  assert.throws(() => business.registerSaleReturn(record, saleId, {
-    ...input, lines: [{ lineIndex: 0, quantity: 3, restock: true }],
-  }), /cantidad/);
+  assert.throws(
+    () =>
+      business.registerSaleReturn(record, saleId, {
+        ...input,
+        lines: [{ lineIndex: 0, quantity: 3, restock: true }],
+      }),
+    /cantidad/,
+  );
   const damaged = business.registerSaleReturn(record, saleId, {
-    ...input, refundAccountId: accountId, lines: [{ lineIndex: 0, quantity: 1, restock: false }],
+    ...input,
+    refundAccountId: accountId,
+    lines: [{ lineIndex: 0, quantity: 1, restock: false }],
   });
   assert.equal(damaged.products.find((product) => product.id === finished.id).stock, 3);
   assert.equal(damaged.cashMovements.at(-1).amount, 100);
@@ -169,17 +217,18 @@ test("venta descuenta existencias, conserva el saldo y limita abonos", () => {
   );
   assert.equal(business.outstandingBalance(partial.sales[0]), 100);
   assert.throws(
-    () => business.createSale(state, {
-      date: "2026-10-31",
-      customerId: customer.id,
-      lines: [{ productId: finished.id, quantity: 6 }],
-      discount: 0,
-      initialPayment: 0,
-      initialPaymentMethod: "",
-      invoiceFollowUpStatus: "not_applicable",
-      externalInvoiceNumber: "",
-      externalInvoiceDate: "",
-    }),
+    () =>
+      business.createSale(state, {
+        date: "2026-10-31",
+        customerId: customer.id,
+        lines: [{ productId: finished.id, quantity: 6 }],
+        discount: 0,
+        initialPayment: 0,
+        initialPaymentMethod: "",
+        invoiceFollowUpStatus: "not_applicable",
+        externalInvoiceNumber: "",
+        externalInvoiceDate: "",
+      }),
     /No hay suficiente inventario/i,
   );
   assert.equal(state.products.find((product) => product.id === finished.id).stock, 5);
@@ -281,9 +330,18 @@ test("el cierre ajusta solo la diferencia de materiales y conserva el costo inic
   const { state, finished, material } = createState();
   const started = business.createProductionOrder(state, finished.id, 5, "2026-10-31");
   const order = started.productionOrders[0];
-  const costs = { actualQuantities: [12], laborHours: 1.5, laborHourlyRate: 200, energyCost: 70, overheadCost: 0 };
+  const costs = {
+    actualQuantities: [12],
+    laborHours: 1.5,
+    laborHourlyRate: 200,
+    energyCost: 70,
+    overheadCost: 0,
+  };
   const close = (actualQuantities) =>
-    business.completeProductionOrder(started, order.id, 1, "2026-10-31", { ...costs, actualQuantities });
+    business.completeProductionOrder(started, order.id, 1, "2026-10-31", {
+      ...costs,
+      actualQuantities,
+    });
 
   assert.throws(() => close([21]), /inventario negativo/);
   assert.equal(started.productionOrders[0].status, "active");
@@ -320,7 +378,10 @@ test("recetas por lote escalan componentes, conservan versiones y fijan la insta
   const draft = recipe.versions.find((version) => version.status === "draft");
   assert.equal(draft.versionNumber, 2);
   const activated = business.activateRecipeVersion(withDraft, recipe.id, draft.id);
-  assert.equal(activated.recipes[0].versions.find((version) => version.id === firstVersion.id).status, "archived");
+  assert.equal(
+    activated.recipes[0].versions.find((version) => version.id === firstVersion.id).status,
+    "archived",
+  );
   assert.equal(activated.recipes[0].activeVersionId, draft.id);
 
   const orderState = business.createProductionOrder(activated, finished.id, 5, "2026-10-31");
@@ -330,12 +391,13 @@ test("recetas por lote escalan componentes, conservan versiones y fijan la insta
   assert.equal(order.recipeVersionNumber, 2);
   assert.equal(order.expectedGoodOutputQuantity, 4.5);
   assert.throws(
-    () => business.saveRecipeVersion(state, {
-      productId: finished.id,
-      baseQuantity: 1,
-      expectedYieldPercent: 100,
-      components: [{ productId: finished.id, quantity: 1 }],
-    }),
+    () =>
+      business.saveRecipeVersion(state, {
+        productId: finished.id,
+        baseQuantity: 1,
+        expectedYieldPercent: 100,
+        components: [{ productId: finished.id, quantity: 1 }],
+      }),
     /propia receta|propia/i,
   );
 });
@@ -423,12 +485,18 @@ test("un contacto rechaza teléfono inválido, NIT corto e identificación repet
     phone: "604 444 5566",
   };
   const state = business.addContact(business.createEmptyState(), contact);
-  assert.throws(() => business.addContact(state, { ...contact, taxId: "", phone: "abc" }), /teléfono/);
+  assert.throws(
+    () => business.addContact(state, { ...contact, taxId: "", phone: "abc" }),
+    /teléfono/,
+  );
   assert.throws(() => business.addContact(state, { ...contact, taxId: "123" }), /6 dígitos/);
-  assert.throws(() => business.addContact(state, { ...contact, taxId: "900.123.456-7" }), /Ya existe/);
+  assert.throws(
+    () => business.addContact(state, { ...contact, taxId: "900.123.456-7" }),
+    /Ya existe/,
+  );
   assert.equal(
-    business.addContact(state, { ...contact, taxId: "AB1234", identificationType: "PASSPORT" }).contacts
-      .length,
+    business.addContact(state, { ...contact, taxId: "AB1234", identificationType: "PASSPORT" })
+      .contacts.length,
     2,
   );
 

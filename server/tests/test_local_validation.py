@@ -459,6 +459,63 @@ class FrontendBuildTests(unittest.TestCase):
             return server_module.prepare_frontend()
 
 
+class OffsiteScheduleTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        root = Path(folder.name)
+        for name, value in {"OFFSITE_CONFIG": root / "offsite.json", "OFFSITE_STATUS": root / "status.json"}.items():
+            setting = patch.object(server_module, name, value)
+            setting.start()
+            self.addCleanup(setting.stop)
+        self.root = root
+
+    def status(self, minutes_ago, failed=False):
+        from datetime import datetime, timedelta, timezone
+
+        moment = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+        (self.root / "status.json").write_text(
+            json.dumps({"lastSuccessAt": moment.isoformat(), "failed": failed}), encoding="utf-8"
+        )
+
+    def test_nothing_runs_when_it_is_not_configured(self):
+        self.assertFalse(server_module.offsite_backup_due())
+
+    def test_a_recent_copy_waits_for_the_next_hour(self):
+        (self.root / "offsite.json").write_text("{}", encoding="utf-8")
+        self.status(10)
+        self.assertFalse(server_module.offsite_backup_due())
+        self.status(61)
+        self.assertTrue(server_module.offsite_backup_due())
+
+    def test_a_failed_copy_is_retried_without_waiting(self):
+        (self.root / "offsite.json").write_text("{}", encoding="utf-8")
+        self.status(5, failed=True)
+        self.assertTrue(server_module.offsite_backup_due())
+
+    def test_the_save_does_not_wait_for_the_copy(self):
+        (self.root / "offsite.json").write_text("{}", encoding="utf-8")
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_copy(state=None):
+            started.set()
+            release.wait(5)
+
+        with patch.object(server_module, "create_offsite_backup", slow_copy):
+            self.assertTrue(server_module.schedule_offsite_backup())
+            self.assertTrue(started.wait(2))
+            self.assertFalse(server_module.schedule_offsite_backup())
+            release.set()
+        for _ in range(100):
+            if server_module.offsite_lock.acquire(blocking=False):
+                server_module.offsite_lock.release()
+                break
+            server_module.time.sleep(0.02)
+        else:
+            self.fail("La copia en segundo plano no liberó el turno.")
+
+
 class LoginLimitTests(unittest.TestCase):
     def setUp(self):
         server_module.login_failures.clear()

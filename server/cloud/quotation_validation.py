@@ -24,7 +24,8 @@ def quotation_error(quote: dict) -> str | None:
     for key in ("number", "customerId", "customerName"):
         if not isinstance(quote.get(key), str) or not quote[key].strip():
             return "La cotización requiere número e identificación del cliente."
-    if not re.fullmatch(r"C-[A-Z0-9-]{1,80}", quote["number"]):
+    # COT-0001 es el formato actual; C-… queda por las cotizaciones ya guardadas.
+    if not re.fullmatch(r"(?:COT|C)-[A-Z0-9-]{1,80}", quote["number"]):
         return "El número de cotización no es válido."
     company = quote.get("company")
     if (

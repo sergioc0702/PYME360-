@@ -38,3 +38,21 @@ class OffsiteBackupTests(unittest.TestCase):
             key = hashlib.pbkdf2_hmac("sha256", b"recovery-test-password", salt, document["iterations"], 32)
             restored = json.loads(AESGCM(key).decrypt(iv, ciphertext, None))
             self.assertEqual(restored["state"], state)
+
+
+class OffsiteRetentionTests(unittest.TestCase):
+    def test_only_the_latest_automatic_copies_are_kept(self):
+        from offsite_backup import prune_backups
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for day in range(1, 36):
+                (root / f"pyme360-automatico-2026-10-{day:02d}T00-00-00-000000Z-aaaa.json").write_text("{}")
+            manual = root / "pyme360-respaldo-2026-10-01.json"
+            manual.write_text("{}")
+            removed = prune_backups(root, keep=30)
+            self.assertEqual(len(removed), 5)
+            remaining = sorted(item.name for item in root.glob("pyme360-automatico-*.json"))
+            self.assertEqual(len(remaining), 30)
+            self.assertTrue(remaining[0].startswith("pyme360-automatico-2026-10-06"))
+            self.assertTrue(manual.exists())

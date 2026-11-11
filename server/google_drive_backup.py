@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from offsite_backup import encrypt_state
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+KEEP_COPIES = 30
 
 
 def authorize_desktop(client_config: dict) -> str:
@@ -45,6 +46,22 @@ def upload_encrypted(service, encrypted: str) -> dict:
     return {"id": result["id"], "name": name, "size": len(content)}
 
 
+def prune_uploads(service, keep: int = KEEP_COPIES) -> list[str]:
+    """Borra las copias más antiguas. El permiso drive.file solo deja ver lo que creó Pyme360."""
+    listing = service.files().list(
+        q="name contains 'pyme360-respaldo-' and trashed = false",
+        orderBy="createdTime desc",
+        fields="files(id,name)",
+        pageSize=200,
+    ).execute()
+    files = [item for item in listing.get("files", []) if str(item.get("name", "")).startswith("pyme360-respaldo-")]
+    removed = []
+    for item in files[keep:]:
+        service.files().delete(fileId=item["id"]).execute()
+        removed.append(item["id"])
+    return removed
+
+
 def upload_state(state: dict, password: str, credentials_json: str) -> tuple[dict, str]:
     import httplib2
     from google.auth.transport.requests import Request
@@ -60,4 +77,8 @@ def upload_state(state: dict, password: str, credentials_json: str) -> tuple[dic
     http = AuthorizedHttp(credentials, http=httplib2.Http(timeout=20))
     service = build("drive", "v3", http=http, cache_discovery=False)
     result = upload_encrypted(service, encrypt_state(state, password))
+    try:
+        prune_uploads(service)
+    except Exception:  # noqa: BLE001 - una limpieza fallida no invalida la copia ya verificada
+        pass
     return result, credentials.to_json()
