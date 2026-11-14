@@ -485,7 +485,7 @@ function ScopeEmissions({ period }: { period?: MonthlyEnvironmentalMetrics }) {
       </div>
       <svg
         className="environment-scope-svg"
-        viewBox="0 0 360 150"
+        viewBox="0 0 420 150"
         role="img"
         aria-label={`Emisiones por alcance para ${period?.period ?? "el último periodo"}, valores en kg de CO₂ equivalente`}
       >
@@ -501,13 +501,13 @@ function ScopeEmissions({ period }: { period?: MonthlyEnvironmentalMetrics }) {
                 {scope.label}
               </text>
               {scope.value === null || !Number.isFinite(scope.value) ? (
-                <text x="98" y={y + 4} className="environment-scope-svg-unavailable">
+                <text x="136" y={y + 4} className="environment-scope-svg-unavailable">
                   No disponible
                 </text>
               ) : (
                 <>
                   <rect
-                    x="88"
+                    x="128"
                     y={y - 7}
                     width="180"
                     height="14"
@@ -515,14 +515,14 @@ function ScopeEmissions({ period }: { period?: MonthlyEnvironmentalMetrics }) {
                     className="environment-scope-svg-track"
                   />
                   <rect
-                    x="88"
+                    x="128"
                     y={y - 7}
                     width={barWidth}
                     height="14"
                     rx="7"
                     className={`environment-scope-svg-bar ${scope.className}`}
                   />
-                  <text x="280" y={y + 4} className="environment-scope-svg-value">
+                  <text x="318" y={y + 4} className="environment-scope-svg-value">
                     {formatNumber(scope.value)}
                   </text>
                 </>
