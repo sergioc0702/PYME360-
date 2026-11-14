@@ -25,7 +25,7 @@ git clone https://github.com/sergioc0702/PYME360-.git
 cd PYME360-
 ```
 
-El repositorio incluye la interfaz React, el servidor local, las pruebas, y la documentación. Conserva `typescript-model/public/vendor/receipt-reader`: contiene las librerías locales que necesita la lectura de recibos. `.gitignore` excluye SQLite, `.env`, respaldos, dependencias, ejecutables generados y artefactos de compilación. No fuerces esos archivos con `git add -f`.
+El repositorio incluye la interfaz React, el servidor local, las pruebas, y la documentación. Conserva `frontend/public/vendor/receipt-reader`: contiene las librerías locales que necesita la lectura de recibos. `.gitignore` excluye SQLite, `.env`, respaldos, dependencias, ejecutables generados y artefactos de compilación. No fuerces esos archivos con `git add -f`.
 
 Este es un proyecto local, no un servicio web alojado. **Subirlo a GitHub no permite que varios usuarios compartan automáticamente la misma base de datos.** Google Drive conserva respaldos cifrados; no funciona como base de datos multiusuario.
 
@@ -33,7 +33,7 @@ No subas a GitHub datos reales de clientes, proveedores, facturas o usuarios. La
 
 ## Flujos disponibles
 
-- Guía de uso paso a paso en [docs/GUIA_DE_USO.md](docs/GUIA_DE_USO.md).
+- Guía de uso paso a paso en [docs/guia-de-uso.md](docs/guia-de-uso.md).
 
 - Inicio con actividad y resumen operativo.
 - Registro de ventas de varios productos, descuentos y pagos parciales; inventario y saldo por cobrar se ajustan automáticamente.
@@ -52,7 +52,7 @@ No subas a GitHub datos reales de clientes, proveedores, facturas o usuarios. La
 - Consumo por producto, repartido según las unidades terminadas en el mes. Es una aproximación.
 - Sugerencias basadas en los datos de la empresa, que se pueden agregar al plan de acciones.
 - Informe mensual en PDF. Orienta decisiones internas y no es un certificado oficial.
-- Referencias públicas para agua y energía desde la API ODS de ONU y la API de XM/Sinergox; comparaciones de intensidad propias solo cuando hay 12 meses completos, producción registrada y conversión de unidades configurada. DANE/SUI/EIA usan snapshots CSV revisados manualmente. Consulta límites y pruebas en [la guía de referencias ambientales](typescript-model/README.md).
+- Referencias públicas para agua y energía desde la API ODS de ONU y la API de XM/Sinergox; comparaciones de intensidad propias solo cuando hay 12 meses completos, producción registrada y conversión de unidades configurada. DANE/SUI/EIA usan snapshots CSV revisados manualmente. Consulta límites y pruebas en [la guía de referencias ambientales](frontend/README.md).
 - Registro del origen del dato ambiental confirmado. El recibo original se descarta y no se conserva.
 - Contactos y conteos físicos de inventario.
 - Espacio **Datos y respaldo** para descargar un libro Excel por hojas, importar `.xlsx`/`.xls` (con plantilla en el asistente) y crear o restaurar un respaldo JSON completo.
@@ -64,13 +64,18 @@ No subas a GitHub datos reales de clientes, proveedores, facturas o usuarios. La
 
 ## Organización del proyecto
 
-- `typescript-model/` contiene la interfaz React/TypeScript y, en `public/vendor/`, las librerías locales de Excel y lectura de recibos.
-- `server/` contiene el servidor Python local.
-- `docs/GUIA_DE_USO.md` contiene la guía paso a paso.
-- `docs/analysis/ERP_ANALYSIS_SUMMARY.md` contiene el análisis técnico y funcional del proyecto.
-- El lanzador de Windows y los de macOS y Linux están en la raíz para que sea fácil abrir Pyme360.
+```text
+Abrir Pyme360.bat   Lanzador de Windows (también hay uno para macOS y otro para Linux)
+frontend/           La interfaz: pantallas, reglas del negocio y pruebas
+server/             El servidor local: API, permisos, validación y SQLite
+docs/               Guía de uso, arquitectura, análisis técnico y estudios de mercado
+PRODUCT.md          Para quién es Pyme360 y qué debe lograr
+DESIGN.md           Reglas visuales de la interfaz
+```
 
-El servidor sirve la compilación de `typescript-model/dist/` y mantiene la API local y los datos SQLite externos al repositorio.
+El detalle de cada carpeta y el recorrido de un cambio desde la pantalla hasta SQLite están en [docs/arquitectura.md](docs/arquitectura.md). La guía para usuarios está en [docs/guia-de-uso.md](docs/guia-de-uso.md).
+
+El servidor sirve la compilación de `frontend/dist/` y mantiene la API local y los datos SQLite externos al repositorio.
 
 ## Alcance del almacenamiento
 
@@ -82,7 +87,7 @@ La extracción de recibos es una ayuda que puede equivocarse y requiere confirma
 
 La demo tampoco se conecta en tiempo real a medidores o cuentas de energía y agua. Una integración de cuenta dependerá de que el proveedor ofrezca una API autorizada para ese servicio. La consulta de XM informa operación agregada del sistema eléctrico, no el consumo de la empresa.
 
-La guía de las referencias externas, sus limitaciones, los archivos oficiales versionados y las pruebas locales está en [typescript-model/README.md](typescript-model/README.md) y [server/benchmark-data/README.md](server/benchmark-data/README.md).
+La guía de las referencias externas, sus limitaciones, los archivos oficiales versionados y las pruebas locales está en [frontend/README.md](frontend/README.md) y [server/benchmark-data/README.md](server/benchmark-data/README.md).
 
 La facturación DIAN requiere un proveedor tecnológico autorizado: Pyme360 incluye el adaptador HTTP y su configuración local, pero no sustituye la certificación, la firma ni la aceptación del proveedor.
 

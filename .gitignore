@@ -1,11 +1,10 @@
 # Archivos de trabajo y artefactos generados, fuera de la demostración web.
 outputs/
-.build/
 *.exe
 
 # Dependencias o datos locales que no deben versionarse.
 node_modules/
-/typescript-model/dist/
+/frontend/dist/
 .venv/
 venv/
 .env

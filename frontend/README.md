@@ -48,7 +48,7 @@ En una terminal, inicia primero el servidor desde la carpeta principal:
 py -3 server/serve-local.py --no-browser
 ```
 
-En otra terminal, inicia Vite desde `typescript-model/`:
+En otra terminal, inicia Vite desde `frontend/`:
 
 ```sh
 npm run dev
@@ -206,7 +206,7 @@ python -m unittest discover -s server/tests -v
 python -m py_compile server/serve-local.py server/sync_local.py server/cloud/app.py
 ```
 
-Desde `typescript-model/`:
+Desde `frontend/`:
 
 ```sh
 npm test

@@ -36,7 +36,7 @@
 - **Backend local**: Python 3.11+ y SQLite; la API central opcional usa FastAPI y PostgreSQL.
 - **Apertura**: `Abrir Pyme360.bat` inicia el servidor local, que compila la interfaz si hace falta y abre el navegador.
 
-### Estructura de Carpetas (`typescript-model/`):
+### Estructura de Carpetas (`frontend/`):
 ```
 src/
   app/                 — Composición de la aplicación, páginas y formularios
@@ -60,15 +60,15 @@ src/
 - **API central**: `server/cloud/` contiene FastAPI, validación de lotes y esquema PostgreSQL.
 
 ### Interacción entre Capas:
-1. Interfaz de usuario → `typescript-model/src/app/App.tsx` → valida permisos de rol (admin/operator/viewer) → llama a funciones de `typescript-model/src/domain/business.ts`
+1. Interfaz de usuario → `frontend/src/app/App.tsx` → valida permisos de rol (admin/operator/viewer) → llama a funciones de `frontend/src/domain/business.ts`
 2. `business.ts` actualiza `AppState` inmutable, ejecuta validaciones, calcula derivados (saldos, movimientos de inventario, emisiones)
-3. `typescript-model/src/infrastructure/storage.ts` persiste cambios en SQLite vía API `/api/v1/typescript-model/state`
+3. `frontend/src/infrastructure/storage.ts` persiste cambios en SQLite vía API `/api/v1/typescript-model/state`
 4. Cambios locales aparecen en cola de sincronización; opcionalmente se envían a API central FastAPI/PostgreSQL
 5. API central valida consistencia, aplica lotes idempotentes, gestiona conflictos y mantiene historial versionado
 
 ## 3. Modelo de Datos
 
-### Entidades Principales (definidas en `typescript-model/src/domain/types.ts`):
+### Entidades Principales (definidas en `frontend/src/domain/types.ts`):
 
 | Entidad | Campos Clave | Relaciones |
 |---------|-------------|------------|
@@ -92,9 +92,9 @@ src/
 | **SupplierInvoiceDocument** | id, documentNumber, issueDate, supplierTaxId, supplierName, buyerTaxId, lines, status | Linked to Purchase (purchaseId), contact (supplierContactId) |
 
 ### Donde se Definen:
-- **Esquemas y Migraciones**: `typescript-model/src/infrastructure/storage.ts` — función `migrateAppState()` transforma versiones anteriores y mantiene compatibilidad de datos
+- **Esquemas y Migraciones**: `frontend/src/infrastructure/storage.ts` — función `migrateAppState()` transforma versiones anteriores y mantiene compatibilidad de datos
 - **ORM**: No usa ORM; acceso directo a SQLite mediante consultas raw y JSON serialization
-- **Validaciones**: `typescript-model/src/domain/business.ts` — validaciones explícitas en cada operación (requireValue, requireText, requireNonNegative, validaciones específicas por módulo)
+- **Validaciones**: `frontend/src/domain/business.ts` — validaciones explícitas en cada operación (requireValue, requireText, requireNonNegative, validaciones específicas por módulo)
 
 ## 4. Base de Datos e Integraciones Externas
 
@@ -106,7 +106,7 @@ src/
 ### Integraciones Externas:
 | Integración | Propósito | Estado |
 |-------------|-----------|--------|
-| **Enel Colombia portal** | Descargar recibos eléctricos/agua, OCR local | Implementado (`typescript-model/src/features/environment/consumption.ts` extrae datos) |
+| **Enel Colombia portal** | Descargar recibos eléctricos/agua, OCR local | Implementado (`frontend/src/features/environment/consumption.ts` extrae datos) |
 | **DANE/EAI** | Estadísticas manufactureras anuales (referencia) | Datos cacheados, actualización manual |
 | **SUI Energía** | Consumo y facturación agregada por prestador | Datos cacheados |
 | **EIA/MECS** | Encuesta manufacturera EE.UU. (referencia internacional) | Datos cacheados |
@@ -128,17 +128,17 @@ src/
 ## 5. Estado Apparente del Proyecto
 
 ### ✅ Completo:
-- Lógica de negocio completa (`typescript-model/src/domain/business.ts` — operaciones + validaciones)
-- Definiciones de tipos completas (`typescript-model/src/domain/types.ts` — esquema v7 con todas las entidades)
+- Lógica de negocio completa (`frontend/src/domain/business.ts` — operaciones + validaciones)
+- Definiciones de tipos completas (`frontend/src/domain/types.ts` — esquema v7 con todas las entidades)
 - Interfaz de React completamente implementada (todas las páginas, formularios, componentes)
-- Almacenamiento SQLite y migraciones hasta v7 (`typescript-model/src/infrastructure/storage.ts`)
-- Autenticación y gestión de usuarios (`typescript-model/src/infrastructure/auth.ts`)
-- Cálculos ambientales y de emisiones (`typescript-model/src/domain/environmental.ts`)
+- Almacenamiento SQLite y migraciones hasta v7 (`frontend/src/infrastructure/storage.ts`)
+- Autenticación y gestión de usuarios (`frontend/src/infrastructure/auth.ts`)
+- Cálculos ambientales y de emisiones (`frontend/src/domain/environmental.ts`)
 - Parser UBL y validación de XML (`server/electronic_invoicing.py`)
 - Test suite (`server/tests/` — tests de e-invoicing y benchmarks)
 - Tailwind CSS v4 con tema completo (`src/tailwind.css`)
-- Import/export Excel y JSON (`typescript-model/src/features/spreadsheets/`, serialización de respaldos en `typescript-model/src/infrastructure/storage.ts`)
-- Panel de sincronización en la nube (`typescript-model/src/features/synchronization/sync.ts`, `typescript-model/src/app/screens/CloudSyncPanel.tsx`)
+- Import/export Excel y JSON (`frontend/src/features/spreadsheets/`, serialización de respaldos en `frontend/src/infrastructure/storage.ts`)
+- Panel de sincronización en la nube (`frontend/src/features/synchronization/sync.ts`, `frontend/src/app/screens/CloudSyncPanel.tsx`)
 
 ### ⚠️ En Desarrollo / a Medias:
 - **Conector e-invoicing DIAN**: El adaptador HTTP ya existe y transmite cuando `server/.env` tiene un proveedor, URL y clave válidos. Sin esa configuración, el sistema solo prepara borradores y responde "No hay un conector de proveedor tecnológico configurado". La aceptación depende de la respuesta del proveedor y de la DIAN.
@@ -160,8 +160,8 @@ src/
 - **Manejo de dinero**: Todos los valores monetarios en pesos colombianos enteros (`Math.round()`), formato `Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })`.
 - **Fechas**: Formato ISO (`YYYY-MM-DD` en código, `DD/MM/YYYY` en pantalla con `Intl.DateTimeFormat("es-CO")`).
 - **UUIDs**: Generados con `crypto.randomUUID()`; identificadores de entidad en la API central siguen patrón UUID.
-- **Manejo de errores**: Clase personalizada `BusinessError` en `typescript-model/src/domain/business.ts`; las operaciones lanzan este error cuando falla una validación.
-- **Estado inmutable**: `structuredClone(state)` + patrón de mutación en `typescript-model/src/domain/business.ts`; `typescript-model/src/infrastructure/storage.ts` usa `migrateAppState()` para migraciones.
+- **Manejo de errores**: Clase personalizada `BusinessError` en `frontend/src/domain/business.ts`; las operaciones lanzan este error cuando falla una validación.
+- **Estado inmutable**: `structuredClone(state)` + patrón de mutación en `frontend/src/domain/business.ts`; `frontend/src/infrastructure/storage.ts` usa `migrateAppState()` para migraciones.
 - **Convenciones de nomenclatura**:
   - Variables: camelCase
   - Componentes React: PascalCase (AppForm, ProductForm)
@@ -187,7 +187,7 @@ src/
   py -3 server/serve-local.py --no-browser
 
   # Vite frontend
-  npm run dev  (desde typescript-model/)
+  npm run dev  (desde frontend/)
 
   # Formato
   npm run format / npm run format:check
@@ -205,7 +205,7 @@ src/
 
 ### Si se va a continuar desarrollo:
 1. **Configurar el proveedor e-invoicing**: copiar `server/.env.example` a `server/.env`, definir `PYME360_EINVOICE_PROVIDER`, `BASE_URL`, `API_KEY` y ambiente según la API documentada del proveedor certificado. El identificador debe coincidir con el guardado en Configuración tributaria. Probar primero en ambiente `test`.
-2. **Revisar migraciones pendientes**: Las migraciones hasta v7 en `typescript-model/src/infrastructure/storage.ts` conservan ventas existentes pero dejan productos históricos como "Por clasificar" tributariamente — revisar con RUT y asesoría contable
+2. **Revisar migraciones pendientes**: Las migraciones hasta v7 en `frontend/src/infrastructure/storage.ts` conservan ventas existentes pero dejan productos históricos como "Por clasificar" tributariamente — revisar con RUT y asesoría contable
 3. **Cargar datos de benchmark**: Colocar `official_snapshots.csv` en la carpeta correcta y configurar `environmentalConfig.benchmarking.preferredSources`
 4. **Probar sincronización cloud**: Levantar `docker compose up --build` y conectar la instancia local en el panel de sincronización
 5. **Validar pruebas**: Ejecutar `python -m unittest discover -s server/tests -v` para asegurar que los cambios no rompan funcionalidades existentes
@@ -220,4 +220,4 @@ src/
 - **No es contabilidad de partida doble** — el control financiero es interno en COP; no realiza conciliación banciera formal ni asientos contables
 
 ---
-*Análisis basado en la exploración de archivos en C:\Users\sergio\Documents\ChatGPT\saas pyme360\typescript-model y directorios servidor asociados. Toda la información se deriva del código fuente real encontrado; se han citado rutas y archivos específicos para cada conclusión.*
+*Análisis basado en la exploración de este repositorio.*

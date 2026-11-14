@@ -43,16 +43,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: typescript-model/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
       - name: Install React dependencies
-        working-directory: typescript-model
+        working-directory: frontend
         run: npm ci
       - name: Lint React application
-        working-directory: typescript-model
+        working-directory: frontend
         run: npm run lint
       - name: Build React application
-        working-directory: typescript-model
+        working-directory: frontend
         run: npm run build
       - name: Run React logic tests
-        working-directory: typescript-model
+        working-directory: frontend
         run: npm test

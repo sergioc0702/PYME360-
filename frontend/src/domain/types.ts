@@ -714,18 +714,6 @@ export interface PurchaseInput {
   lines: PurchaseLineInput[];
 }
 
-export interface EnvironmentalRecordInput {
-  period: string;
-  electricityKwh: number;
-  waterM3: number;
-  fuelLiters: number;
-  productionUnits: number;
-  wasteKg: number;
-  recoveredKg: number;
-  source?: ConsumptionSource;
-  sourceLabel?: string;
-  receiptImportId?: string;
-}
 
 export type ResourceReadingInput = Omit<ResourceReading, "id" | "capturedAt"> & {
   capturedAt?: string;

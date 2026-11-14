@@ -28,7 +28,7 @@ Ventas, compras, inventario, recetas, producción, contactos, dinero, consumo y 
 
 ## Brand Commitments
 
-Nombre Pyme360. Se conserva el logo actual (`typescript-model/public/pyme360-logo-*.png`, `pyme360-mark-*.png`). Los colores y el resto de la apariencia pueden renovarse.
+Nombre Pyme360. Se conserva el logo actual (`frontend/public/pyme360-logo-*.png`, `pyme360-mark-*.png`). Los colores y el resto de la apariencia pueden renovarse.
 
 Voz: español sencillo de Colombia, de tú, sin jerga técnica ni ambiental. Decir "Consumo del mes", no "lectura ambiental"; "Gasto por unidad", no "intensidad".
 

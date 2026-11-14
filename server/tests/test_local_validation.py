@@ -270,6 +270,12 @@ class LocalStateSaveTests(unittest.TestCase):
         server_module.OFFSITE_CONFIG.write_text('{"provider":"google_drive"}', encoding="utf-8")
         with patch.object(server_module, "create_offsite_backup", side_effect=RuntimeError("sin red")):
             status, body = self.put(self.sale_with_payment(), self.revision, self.admin_cookie)
+            # La copia externa corre en segundo plano: se espera a que termine antes de revisarla.
+            for _ in range(250):
+                if server_module.offsite_lock.acquire(blocking=False):
+                    server_module.offsite_lock.release()
+                    break
+                server_module.time.sleep(0.02)
         self.assertEqual(status, 200, body)
         self.assertTrue(body["savedLocally"])
         self.assertEqual(server_module.typescript_model_state_row()["revision"], self.revision + 1)

@@ -1,8 +1,8 @@
 ---
 version: 1
 slug: "typescript-model-src-app-app-tsx"
-primary_target: "typescript-model/src/app/App.tsx"
-related_targets: ["typescript-model/src/tailwind.css"]
+primary_target: "frontend/src/app/App.tsx"
+related_targets: ["frontend/src/tailwind.css"]
 ---
 
 # Interfaz de Pyme360: marco, menú e Inicio
